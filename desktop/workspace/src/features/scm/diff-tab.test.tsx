@@ -291,12 +291,13 @@ describe('DiffTab expand context', () => {
 });
 
 describe('DiffTab placeholders', () => {
-  it('says a binary file changed, and offers no text actions', async () => {
+  it('says a binary file changed, and offers the whole file but no text actions', async () => {
     host({diff: 'diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n'});
     const {container} = tab({tabRef: 'worktree:logo.png'});
     expect(await screen.findByText('Binary file changed. A text preview is not available.')).toBeInTheDocument();
     expect(screen.queryByRole('button', {name: 'Open file in editor'})).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', {name: 'Stage file'})).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Stage file'})).toBeInTheDocument();
+    expect(screen.queryByText('+0')).not.toBeInTheDocument();
     await expectNoAxeViolations(container);
   });
 
@@ -320,6 +321,8 @@ describe('DiffTab placeholders', () => {
     host({diff: ''});
     const {props, unmount} = tab({tabRef: 'staged:src/a.ts'});
     expect(await screen.findByText('Nothing is staged for this file.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Unstage file'})).not.toBeInTheDocument();
+    expect(screen.queryByText('+0')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', {name: 'Close tab'}));
     expect(props.onClose).toHaveBeenCalled();
     unmount();

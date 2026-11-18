@@ -177,7 +177,7 @@ function FileDiff({project, session, visible, side, path, onOpenFile, onClose}: 
     ready && !ready.untracked
       ? {label: stageSide ? 'Stage hunk' : 'Unstage hunk', busy, run: (hunk: Hunk) => void mutate('hunk', {patch: hunkPatch(ready.file, hunk), stage: stageSide})}
       : null;
-  const counts = ready && !ready.binary && !ready.tooLarge ? totals(ready.file) : null;
+  const counts = ready && !ready.binary && !ready.tooLarge && hunkCount > 0 ? totals(ready.file) : null;
   const empty = ready && !ready.binary && !ready.tooLarge && ready.file.hunks.length === 0;
 
   const body = (() => {
@@ -242,11 +242,11 @@ function FileDiff({project, session, visible, side, path, onOpenFile, onClose}: 
         canStep={hunkCount > 1}
         busy={busy}
         fileAction={
-          ready && !ready.binary
+          ready && !empty
             ? {label: stageSide ? 'Stage file' : 'Unstage file', run: () => void mutate(stageSide ? 'stage' : 'unstage', {paths: [path]})}
             : null
         }
-        onOpenFile={ready && !ready.binary && !(ready.file.hunks.length === 0) ? () => onOpenFile(path) : null}
+        onOpenFile={ready && !ready.binary && !ready.tooLarge && !empty ? () => onOpenFile(path) : null}
         onMode={changeMode}
         onStep={step}
         onRefresh={() => void reload()}
