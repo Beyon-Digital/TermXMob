@@ -1,6 +1,7 @@
 import {Transaction} from '@codemirror/state';
 import {EditorView} from '@codemirror/view';
 import {Ellipsis, Save, X} from 'lucide-react';
+import {SAVE_FILE_EVENT, answersSaveRequest} from './save-request';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {Button} from '../../components/ui/button';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger} from '../../components/ui/dropdown-menu';
@@ -170,6 +171,18 @@ export default function FileTab({fileKey, visible, project, onFindFile, onOpenFi
     };
   }, [reveal, visible, present]);
 
+  // File > Save and the Save key.
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const save = () => {
+      const current = latest.current;
+      if (!current.key || !answersSaveRequest(root.current, current.visible)) return;
+      if (current.store.get(current.key)?.dirty) void current.store.save(current.key);
+    };
+    window.addEventListener(SAVE_FILE_EVENT, save);
+    return () => window.removeEventListener(SAVE_FILE_EVENT, save);
+  }, []);
+
   const lsp = useLanguageServer({project, session, buffer, view: () => view.current, onError: report, onOpen: onOpenFile});
 
   if (!fileKey) {
@@ -198,7 +211,7 @@ export default function FileTab({fileKey, visible, project, onFindFile, onOpenFi
   }
   const saving = store.saving.has(fileKey);
   return (
-    <section className="file-tab" aria-label={'File ' + path}>
+    <section className="file-tab" ref={root} aria-label={'File ' + path}>
       <div className="file-tab-bar">
         <Breadcrumbs path={path} readOnly={!buffer.editable} />
         <div className="file-tab-actions">

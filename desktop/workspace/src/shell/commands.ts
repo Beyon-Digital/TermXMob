@@ -60,6 +60,10 @@ export interface CommandActions {
   detachWorkspace: () => void;
   returnToMain: () => void;
   recoverWindows: () => void;
+  /** Register an existing folder as a project (the Add project dialog, which also offers Open project for a known folder). */
+  openProject: () => void;
+  /** Save the focused file tab, or the visible one when focus is elsewhere. */
+  saveFile: () => void;
   /** Source control (the new layout): commit, stage everything or refresh in the view, and step between changes in the focused diff. */
   scmCommand: (command: ScmCommand) => void;
   changeStep: (step: ChangeStep) => void;
@@ -194,6 +198,14 @@ const specs = keyed({
     defaultKeys: 'Mod+Shift+T',
     when: 'agent',
     run: a => a.panelCommand('reopen'),
+  },
+  saveFile: {
+    // The editor binds the same key itself and handles it first; this entry makes File > Save and the key work from anywhere.
+    title: 'Save file',
+    category: 'Workspace',
+    defaultKeys: 'Mod+S',
+    when: 'agent',
+    run: a => a.saveFile(),
   },
   fullscreen: {
     title: 'Toggle full screen',
@@ -652,6 +664,15 @@ const windowAndWork: Command[] = [
     category: 'Chat',
     keywords: 'new conversation project agent preset folder',
     run: a => a.openNewChatWithOptions(),
+  },
+  {
+    id: 'open-project',
+    title: 'Open project',
+    category: 'Go',
+    when: 'agent',
+    keywords: 'add project folder register open directory',
+    leavesManager: true,
+    run: a => a.openProject(),
   },
   {
     id: 'projects-overview',

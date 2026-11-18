@@ -8,6 +8,7 @@ mod input_macos;
 mod logging;
 mod media_permission;
 mod menu;
+mod menu_commands;
 mod permissions;
 mod private_storage;
 mod service_identity;

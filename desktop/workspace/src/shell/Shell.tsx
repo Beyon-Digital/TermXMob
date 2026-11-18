@@ -137,6 +137,7 @@ function ShellBody({navigation, engine}: {navigation: ShellNavigation; engine: S
     detachWorkspace: () => transferRef.current?.detach(),
     returnToMain: () => void transferRef.current?.redock(),
     recoverWindows: () => void transferRef.current?.recoverWindows(),
+    openProject: () => setAddProjectOpen(true),
   });
   const transfer = useWindowTransfer({
     selected,

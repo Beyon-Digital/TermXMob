@@ -1,5 +1,5 @@
-import {useEffect, useState, type Dispatch, type SetStateAction} from 'react';
-import {defaults, loadBindings, type Bindings} from '../lib/keybindings';
+import {useEffect, useRef, useState, type Dispatch, type SetStateAction} from 'react';
+import {defaults, loadBindings, shortcutSurface, type Bindings} from '../lib/keybindings';
 import {
   commandAvailable,
   findCommand,
@@ -9,13 +9,16 @@ import {
   type CommandInvocation,
 } from './commands';
 import {requestChangeStep, requestScmCommand} from '../features/scm/scm-bus';
+import {requestSaveFile} from '../features/editor/save-request';
 import {isDetachedWindow, nativeWorkspace} from '../lib/native';
+import {listenNativeMenu} from '../lib/native-menu';
 import {detachedBrowser} from '../lib/window-journal';
 import {useAuth} from './AuthGate';
 import type {LayoutController} from './layout-controller';
 import type {ShellNavigation} from './navigation-state';
 import type {WorkspaceNavigation} from './use-workspace-navigation';
 import {requestAgentSurface} from '../lib/agent-surface-requests';
+import {resolveMenuCommand} from './native-menu';
 import {useShortcuts} from './use-shortcuts';
 import {useWorkspaceData} from './WorkspaceDataProvider';
 
@@ -33,6 +36,7 @@ type Options = {
   detachWorkspace: () => void;
   returnToMain: () => void;
   recoverWindows: () => void;
+  openProject: () => void;
 };
 
 /**
@@ -119,6 +123,8 @@ export function useShellCommands(options: Options) {
     detachWorkspace: options.detachWorkspace,
     returnToMain: options.returnToMain,
     recoverWindows: options.recoverWindows,
+    openProject: options.openProject,
+    saveFile: requestSaveFile,
     scmCommand: requestScmCommand,
     changeStep: requestChangeStep,
   };
@@ -133,6 +139,26 @@ export function useShellCommands(options: Options) {
     if (command.leavesManager) nav.setManager('');
     command.run(actions, invocation);
   }
+
+  // The native menu only names a command; running it, and refusing it while locked, is the shell's job as for any key.
+  const latestRun = useRef(runCommand);
+  latestRun.current = runCommand;
+  useEffect(() => {
+    let live = true;
+    let release = () => {};
+    void listenNativeMenu(id => {
+      const command = resolveMenuCommand(id, lockedNow.current);
+      if (!command) return;
+      latestRun.current(command, {source: 'palette', terminalFocused: shortcutSurface(document.activeElement) === 'terminal'});
+    }).then(stop => {
+      if (live) release = stop;
+      else stop();
+    });
+    return () => {
+      live = false;
+      release();
+    };
+  }, []);
 
   useShortcuts({
     bindings,

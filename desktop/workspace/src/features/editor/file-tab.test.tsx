@@ -13,6 +13,7 @@ import {BufferProvider, useBuffers} from './buffer-store';
 import {bufferKey} from './file-io';
 import FileTab from './FileTab';
 import {requestFileLine} from './file-navigation';
+import {requestSaveFile} from './save-request';
 
 const request = vi.hoisted(() => vi.fn());
 const gql = vi.hoisted(() => vi.fn());
@@ -139,6 +140,19 @@ describe('FileTab', () => {
     expect(String(put[0])).toContain('/api/workspace/sessions/chat/files');
     expect(JSON.parse(put[1].body)).toMatchObject({path: 'notes/a.md', content: '# Alpha\nmore\n', revision: 'v1'});
     expect(screen.getByRole('button', {name: 'Save file'})).toBeDisabled();
+  });
+
+  it('saves the visible dirty file when the native menu asks for File > Save', async () => {
+    const probe: Harness = {current: stateWith(KEY_A)};
+    const {container} = render(<Host initial={probe.current} probe={probe} />);
+    await waitFor(() => expect(container.querySelector('.cm-content')).toHaveTextContent('# Alpha'));
+    const view = editorOf(container);
+    await act(async () => view.dispatch({changes: {from: view.state.doc.length, insert: 'menu\n'}}));
+    expect(screen.getByTestId('dirty')).toBeInTheDocument();
+    await act(async () => requestSaveFile());
+    await waitFor(() => expect(screen.queryByTestId('dirty')).not.toBeInTheDocument());
+    const put = request.mock.calls.find(call => call[1]?.method === 'PUT')!;
+    expect(JSON.parse(put[1].body)).toMatchObject({path: 'notes/a.md', content: '# Alpha\nmenu\n'});
   });
 
   it('is read only when the host says so', async () => {

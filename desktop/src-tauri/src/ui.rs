@@ -25,7 +25,7 @@ pub fn main_window_visible(app: &AppHandle) -> bool {
 
 pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("Termx")
+        .title("TermX")
         .inner_size(1280.0, 820.0)
         .min_inner_size(760.0, 520.0)
         .visible(!START_HIDDEN.load(Ordering::SeqCst))
@@ -164,7 +164,7 @@ fn open_connect_window_impl(app: &AppHandle, reveal_qr: bool) {
     }
     let builder =
         WebviewWindowBuilder::new(app, "connect", WebviewUrl::External(url.parse().unwrap()))
-            .title("Termx — Machine Status")
+            .title("TermX — Machine Status")
             .inner_size(440.0, 760.0)
             .min_inner_size(360.0, 520.0)
             .resizable(true);
