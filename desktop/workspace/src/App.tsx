@@ -147,6 +147,12 @@ import {
   type CommandInvocation,
 } from './shell/commands';
 import {useShortcuts} from './shell/use-shortcuts';
+import AddProjectHost from './shell/dialogs/AddProjectHost';
+import CommandPaletteDialog from './shell/dialogs/CommandPaletteDialog';
+import LayoutsDialog from './shell/dialogs/LayoutsDialog';
+import NewChatDialog from './shell/dialogs/NewChatDialog';
+import RecoverWindowsDialog from './shell/dialogs/RecoverWindowsDialog';
+import {useNewChat} from './shell/use-new-chat';
 import {RedockCover, useWindowTransfer} from './shell/WindowTransfer';
 import {
   layouts,
@@ -306,13 +312,10 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   } = useWorkspaceData();
   const [theme, setTheme] = useTheme(),
     [query, setQuery] = useState(''),
-    [newOpen, setNewOpen] = useState(false),
     [addProjectOpen, setAddProjectOpen] = useState(false),
-    [folder, setFolder] = useState(''),
     [palette, setPalette] = useState(false),
     [incoming, setIncoming] = useState<IncomingContext | null>(null),
     [online, setOnline] = useState(navigator.onLine),
-    [registering, setRegistering] = useState(false),
     [visited, setVisited] = useState<Set<string>>(new Set(['conversation']));
   const [studioVisited, setStudioVisited] = useState(() => readWorkspaceMode() === 'studio'),
     [dataVisited, setDataVisited] = useState(() => readWorkspaceMode() === 'data'),
@@ -412,9 +415,7 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   }, [coordinationVisible, coordinationRetained]);
   const coordinationAutoOpened = useRef(false),
     coordinationAside = useRef<HTMLElement>(null),
-    coordinationToggle = useRef<HTMLButtonElement>(null),
-    newChatFlight = useRef(false),
-    newComposerFocus = useRef<{id: string; intent: number} | null>(null);
+    coordinationToggle = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     let preference: string | null = null;
     try {
@@ -1311,138 +1312,32 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  const [newPreset, setNewPreset] = useState(''),
-    [newPresets, setNewPresets] = useState<AgentPreset[]>([]),
-    [newPresetsLoading, setNewPresetsLoading] = useState(false);
-  useEffect(() => {
-    if (!auth || !newOpen) return;
-    let stopped = false;
-    setNewPresets([]);
-    setNewPresetsLoading(true);
-    request<{presets: AgentPreset[]}>(
-      '/api/workspace/presets' + (projectId ? '?project_id=' + encodeURIComponent(projectId) : ''),
-    )
-      .then(value => {
-        if (!stopped) setNewPresets(value.presets || []);
-      })
-      .catch(report)
-      .finally(() => {
-        if (!stopped) setNewPresetsLoading(false);
-      });
-    return () => {
-      stopped = true;
-    };
-  }, [newOpen, projectId, auth?.principal.id]);
-  function openNewChatWithOptions(targetProject = '') {
-    const open = () => {
-      navigationIntent.current++;
-      setWorkspaceState('agent');
-      setProjectId(targetProject);
-      setFolder('');
-      setNewPreset('');
-      setNewOpen(true);
-    };
-    if (isSettingsCategory(manager)) leaveSettings(open);
-    else open();
-  }
-  function openNewChat(targetProject = '') {
-    if (newChatFlight.current) return;
-    const open = () => {
-      setWorkspaceState('agent');
-      void createConversation({projectId: targetProject, presetId: '', folder: ''});
-    };
-    if (isSettingsCategory(manager)) leaveSettings(open);
-    else open();
-  }
-  async function createConversation(options?: {projectId: string; presetId: string; folder: string}) {
-    if (newChatFlight.current) return;
-    newChatFlight.current = true;
-    const pending = fence(),
-      intent = ++navigationIntent.current;
-    setRegistering(true);
-    const chosenOptions = options || {projectId, presetId: newPreset, folder};
-    try {
-      let chosen = projects.find(project => project.id === chosenOptions.projectId);
-      if (chosenOptions.folder.trim()) {
-        const result = await gql<{register_project: Project}>(
-          'mutation($input:ProjectInput!){register_project(input:$input){id name path}}',
-          {input: {path: chosenOptions.folder, name: ''}},
-        );
-        chosen = result.register_project;
-      }
-      if (!pending.current() || intent !== navigationIntent.current) return;
-      const preset = newPresets.find(row => row.id === chosenOptions.presetId);
-      const chat = await request<Session>(
-        '/api/workspace/sessions',
-        json('POST', {
-          project_id: chosen?.id,
-          cwd: chosen?.path,
-          engine: preset?.engine === 'inherit' ? 'internal' : preset?.engine || 'internal',
-          provider_id: preset?.provider_id || providers.find(provider => provider.secret_configured)?.id,
-          model: preset?.model || null,
-          mode: 'agent',
-          custom_agent_id: chosenOptions.presetId || null,
-        }),
-      );
-      if (!pending.current()) return;
-      if (intent !== navigationIntent.current) {
-        void load();
-        return;
-      }
-      setProjectWorkbenchId('');
-      setSession(chat);
-      setSelected(chat.id);
-      setProjectId(chat.project_id || chosen?.id || '');
-      setManager('');
-      chooseLayout('chat');
-      newComposerFocus.current = {id: chat.id, intent: navigationIntent.current};
-      setNewOpen(false);
-      setFolder('');
-      setNewPreset('');
-      if (innerWidth <= 850) setLeft(false);
-      await load();
-    } catch (reason) {
-      if (pending.current()) report(reason);
-    } finally {
-      newChatFlight.current = false;
-      setRegistering(false);
-    }
-  }
-  useEffect(() => {
-    const pending = newComposerFocus.current;
-    if (!pending || selected !== pending.id || session?.id !== pending.id || workspace !== 'agent' || newOpen)
-      return;
-    const focus = () => {
-      if (
-        navigationIntent.current !== pending.intent ||
-        selection.current !== pending.id ||
-        managerNow.current ||
-        workspaceNow.current !== 'agent'
-      ) {
-        newComposerFocus.current = null;
-        return true;
-      }
-      const field = document.querySelector<HTMLTextAreaElement>('#agent-workspace textarea[name="message"]');
-      if (!field || field.disabled) return false;
-      field.focus();
-      newComposerFocus.current = null;
-      return true;
-    };
-    if (focus()) return;
-    const target = document.getElementById('agent-workspace');
-    if (!target) return;
-    const observer = new MutationObserver(() => {
-      if (focus()) observer.disconnect();
-    });
-    observer.observe(target, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['disabled'],
-    });
-    return () => observer.disconnect();
-  }, [selected, session?.id, workspace, newOpen]);
-
+  const {
+    newOpen,
+    setNewOpen,
+    folder,
+    setFolder,
+    registering,
+    newPreset,
+    setNewPreset,
+    newPresets,
+    newPresetsLoading,
+    newComposerFocus,
+    openNewChat,
+    openNewChatWithOptions,
+    createConversation,
+  } = useNewChat({
+    navigationIntent,
+    workspace,
+    manager,
+    workspaceNow,
+    managerNow,
+    setWorkspaceState,
+    setProjectWorkbenchId,
+    setManager,
+    chooseLayout,
+    setLeft,
+  });
   async function updateRow(chat: Session, changes: Record<string, unknown>) {
     try {
       const latest = await request<Session>('/api/workspace/sessions/' + chat.id + '?turns=false');
@@ -2656,143 +2551,65 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
             </Suspense>
           </SettingsSurface>
         )}
-        <Dialog open={recoveryOpen} onOpenChange={setRecoveryOpen}>
-          <DialogContent>
-            <DialogTitle>Recover unsaved windows</DialogTitle>
-            <DialogDescription>
-              Reopen your own preserved window state. Active named windows are focused; files are not saved
-              automatically.
-            </DialogDescription>
-            {!recoveryRows.length && <p>No other unsaved windows are stored for this account.</p>}
-            {recoveryRows.map(row => (
-              <div className="creation-actions" key={row.slot}>
-                <span>
-                  {sessions.find(session => session.id === row.sessionId)?.title || 'Preserved workspace'} ·{' '}
-                  {row.buffers} unsaved files · {row.drafts} drafts · {row.artifacts} unsaved artifacts
-                </span>
-                <Button
-                  onClick={() => void reopenRecovered(row)}
-                  disabled={!row.sessionId}
-                >
-                  Reopen window
-                </Button>
-              </div>
-            ))}
-          </DialogContent>
-        </Dialog>
-        <AddProjectDialog
-          ownerId={auth.principal.id}
-          enabled={!locked}
-          projects={projects}
+        <RecoverWindowsDialog
+          open={recoveryOpen}
+          onOpenChange={setRecoveryOpen}
+          rows={recoveryRows}
+          sessions={sessions}
+          onReopen={row => void reopenRecovered(row)}
+        />
+        <AddProjectHost
           open={addProjectOpen && workspace === 'agent'}
           onOpenChange={setAddProjectOpen}
-          onRegistered={async (project, isCurrent) => {
-            const intent = navigationIntent.current;
-            await load();
-            if (isCurrent() && intent === navigationIntent.current && !lockedNow.current)
-              openProject(project);
-          }}
+          navigationIntent={() => navigationIntent.current}
+          onProjectAdded={openProject}
         />
-        <Dialog open={newOpen && workspace === 'agent'} onOpenChange={setNewOpen}>
-          <DialogContent
-            onCloseAutoFocus={event => {
-              if (newComposerFocus.current) event.preventDefault();
-            }}
-          >
-            <DialogTitle>New chat with options</DialogTitle>
-            <DialogDescription>
-              Choose project context or an agent preset. Your first message names the chat.
-            </DialogDescription>
-            <form
-              onSubmit={event => {
-                event.preventDefault();
-                void createConversation();
-              }}
-            >
-              <label>
-                Project
-                <Select
-                  aria-label="Project"
-                  value={projectId}
-                  onChange={event => setProjectId(event.target.value)}
-                >
-                  <option value="">Unassigned conversation</option>
-                  {scopeProjects(projects, projectId).map(project => (
-                    <option value={project.id} key={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <PresetPicker
-                loading={newPresetsLoading}
-                label="New conversation agent preset"
-                presets={newPresets}
-                value={newPreset}
-                onChange={id => setNewPreset(id || '')}
-                disabled={registering}
-              />
-              <HostPathField
-                label="Add a project folder"
-                value={folder}
-                onChange={setFolder}
-                ownerId={auth.principal.id}
-                disabled={registering || locked}
-              />
-              <Button
-                type="submit"
-                disabled={
-                  registering ||
-                  newPresetsLoading ||
-                  (!!newPreset && !newPresets.some(row => row.id === newPreset))
-                }
-              >
-                {registering ? 'Creating…' : 'Create chat'}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-        <Dialog open={layoutsOpen && workspace === 'agent'} onOpenChange={setLayoutsOpen}>
-          <DialogContent>
-            <DialogTitle>Saved layout presets</DialogTitle>
-            <DialogDescription>
-              Restore an arrangement without changing the running task or saving files.
-            </DialogDescription>
-            <LayoutPresets
-              presets={namedLayouts}
-              onSave={saveLayout}
-              onRestore={id => {
-                const saved = layoutBook.current?.read().named.find(item => item.id === id);
-                if (saved) {
-                  rememberLayout();
-                  focusRestore.current = null;
-                  restoreLayout(saved.snapshot);
-                  setManager('');
-                  setLayoutsOpen(false);
-                }
-              }}
-              onRemove={id => {
-                layoutBook.current?.remove(id);
-                setNamedLayouts(layoutBook.current?.read().named || []);
-              }}
-              onReset={resetLayout}
-            />
-          </DialogContent>
-        </Dialog>
-        <Dialog open={palette} onOpenChange={setPalette}>
-          <DialogContent>
-            <DialogTitle>Workspace commands</DialogTitle>
-            <DialogDescription>
-              Use commands or keyboard shortcuts to arrange your workspace.
-            </DialogDescription>
-            <WorkspaceCommands
-              commands={paletteEntries(commandContext, bindings, command => {
-                runCommand(command, {source: 'palette', terminalFocused: false});
-                setPalette(false);
-              })}
-            />
-          </DialogContent>
-        </Dialog>
+        <NewChatDialog
+          open={newOpen && workspace === 'agent'}
+          onOpenChange={setNewOpen}
+          ownerId={auth.principal.id}
+          keepFocusOnClose={() => !!newComposerFocus.current}
+          projects={projects}
+          projectId={projectId}
+          onProject={setProjectId}
+          presets={newPresets}
+          presetsLoading={newPresetsLoading}
+          preset={newPreset}
+          onPreset={setNewPreset}
+          folder={folder}
+          onFolder={setFolder}
+          creating={registering}
+          locked={locked}
+          onCreate={() => void createConversation()}
+        />
+        <LayoutsDialog
+          open={layoutsOpen && workspace === 'agent'}
+          onOpenChange={setLayoutsOpen}
+          presets={namedLayouts}
+          onSave={saveLayout}
+          onRestore={id => {
+            const saved = layoutBook.current?.read().named.find(item => item.id === id);
+            if (saved) {
+              rememberLayout();
+              focusRestore.current = null;
+              restoreLayout(saved.snapshot);
+              setManager('');
+              setLayoutsOpen(false);
+            }
+          }}
+          onRemove={id => {
+            layoutBook.current?.remove(id);
+            setNamedLayouts(layoutBook.current?.read().named || []);
+          }}
+          onReset={resetLayout}
+        />
+        <CommandPaletteDialog
+          open={palette}
+          onOpenChange={setPalette}
+          context={commandContext}
+          bindings={bindings}
+          onRun={command => runCommand(command, {source: 'palette', terminalFocused: false})}
+        />
       </div>
       <StudioProjectSwitchDialog
         open={!!studioProjectGuard.pending && !locked}
