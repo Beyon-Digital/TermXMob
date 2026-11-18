@@ -1,3 +1,12 @@
+import {
+  routeInitialLayout,
+  routeManager,
+  routeWorkbenchProject,
+  useWorkspaceHistory,
+  useWorkspacePopstate,
+  useWorkspaceThemeScope,
+  workspaceRoute,
+} from './shell/routes';
 import {useStudioProjects} from './lib/studio-projects';
 import {useStudioProjectGuard} from './lib/studio-draft-state';
 import StudioProjectSwitchDialog from './features/StudioProjectSwitchDialog';
@@ -233,16 +242,8 @@ const projectSettingsCategories = new Set([
   'runners',
   'access',
 ]);
-export function workspaceRoute(pathname = location.pathname, search = location.search) {
-  const params = new URLSearchParams(search),
-    sessionRoute = pathname.match(/^\/session\/([^/]+)/),
-    manageRoute = pathname.match(/^\/manage\/([^/]+)/);
-  return {
-    selected: sessionRoute ? decodeURIComponent(sessionRoute[1]) : params.get('session') || '',
-    manager: manageRoute ? decodeURIComponent(manageRoute[1]) : '',
-    project: params.get('project') || '',
-  };
-}
+export {useWorkspaceHistory, useWorkspaceThemeScope, workspaceRoute};
+
 /** Only use content already available in the list or the selected snapshot. */
 export function sessionListPreview(session: Pick<Session, 'draft_text' | 'turns'>): string {
   const draft = session.draft_text?.replace(/\s+/g, ' ').trim();
@@ -255,43 +256,6 @@ export function sessionListPreview(session: Pick<Session, 'draft_text' | 'turns'
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 200);
-}
-
-export function useWorkspaceThemeScope(workspace: WorkspaceMode = 'agent') {
-  useLayoutEffect(() => {
-    document.documentElement.dataset.appWorkspace = workspace;
-    return () => {
-      delete document.documentElement.dataset.appWorkspace;
-    };
-  }, [workspace]);
-}
-
-export function useWorkspaceHistory(
-  authenticated: boolean,
-  manager: string,
-  selected: string,
-  workspace: WorkspaceMode = 'agent',
-  studioSection: StudioSection = 'create',
-  project = '',
-) {
-  useEffect(() => {
-    // Native IPC and media grants are bound to the exact root workspace URL.
-    // Its windows use query parameters for initial selection, not browser routes.
-    if (!authenticated || nativeWorkspace()) return;
-    const target = workspaceHistoryTarget(
-      manager,
-      selected,
-      workspace,
-      location.search,
-      studioSection,
-      project,
-    );
-    if (location.pathname + location.search === target) return;
-    // `/` only exists to land on a conversation; keeping it as its own entry makes Back bounce forward again.
-    if (location.pathname === '/' && !location.search && target.startsWith('/session/'))
-      history.replaceState(null, '', target);
-    else history.pushState(null, '', target);
-  }, [authenticated, manager, selected, workspace, studioSection, project]);
 }
 
 export default function App() {
@@ -1170,27 +1134,16 @@ export default function App() {
       mode = readWorkspaceMode();
     setSelected(route.selected);
     setProjectId(route.project);
-    setProjectWorkbenchId(route.selected ? '' : route.project);
-    projectWorkbenchNow.current = route.selected ? '' : route.project;
+    setProjectWorkbenchId(routeWorkbenchProject(route));
+    projectWorkbenchNow.current = routeWorkbenchProject(route);
     setWorkspaceState(mode);
     setStudioVisited(mode === 'studio');
     setDataVisited(mode === 'data');
     setWorkflowsVisited(route.manager === 'workflows');
     setWorkflowRunId(null);
     setManager(route.manager);
-    const target = new URLSearchParams(location.search).get('layout');
     const saved = book.read();
-    restoreLayout(
-      book.arrangement(
-        route.project && !route.selected
-          ? 'workbench'
-          : ['chat', 'workbench', 'browser', 'computer', 'artifacts', 'review', 'terminal'].includes(
-                target || '',
-              )
-            ? (target as 'chat')
-            : saved.last || 'chat',
-      ),
-    );
+    restoreLayout(book.arrangement(routeInitialLayout(route) || saved.last || 'chat'));
     const navigation = readSidebarPreference(auth.principal.id);
     setSidebarHover(navigation?.hover || false);
     setLeft(
@@ -1581,51 +1534,32 @@ export default function App() {
     studioSection,
     projectWorkbenchId,
   );
-  useEffect(() => {
-    const onPop = () => {
-      const route = workspaceRoute(),
-        mode = readWorkspaceMode();
-      const open = () => {
-        navigationIntent.current++;
-        setWorkspaceState(mode);
-        setStudioSection(readStudioSection());
-        if (mode === 'data') setDataVisited(true);
-        if (mode === 'studio') {
-          if (!studioVisited) setStudioProjectId(project?.id || '');
-          setStudioVisited(true);
-        }
-        setSelected(route.selected);
-        setSession(null);
-        setProjectId(route.project);
-        setProjectWorkbenchId(route.selected ? '' : route.project);
-        projectWorkbenchNow.current = route.selected ? '' : route.project;
-        setManagerState(['media', 'data'].includes(route.manager) ? '' : route.manager);
-        if (mode === 'agent' && route.project && !route.selected && !route.manager) chooseLayout('workbench');
-        if (mode === 'agent' && !route.selected && !route.project && !route.manager)
-          setHomeRequest(value => value + 1);
-      };
-      if (
-        !window.dispatchEvent(new CustomEvent(SETTINGS_LEAVE, {cancelable: true, detail: {proceed: open}}))
-      ) {
-        history.pushState(
-          null,
-          '',
-          workspaceHistoryTarget(
-            manager,
-            selected,
-            workspace,
-            location.search,
-            studioSection,
-            projectWorkbenchId,
-          ),
-        );
-        return;
+  useWorkspacePopstate({
+    manager,
+    selected,
+    workspace,
+    studioSection,
+    projectWorkbenchId,
+    onRoute: ({route, mode, studioSection: section}) => {
+      navigationIntent.current++;
+      setWorkspaceState(mode);
+      setStudioSection(section);
+      if (mode === 'data') setDataVisited(true);
+      if (mode === 'studio') {
+        if (!studioVisited) setStudioProjectId(project?.id || '');
+        setStudioVisited(true);
       }
-      open();
-    };
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, [manager, selected, workspace, studioSection, studioVisited, project?.id, projectWorkbenchId]);
+      setSelected(route.selected);
+      setSession(null);
+      setProjectId(route.project);
+      setProjectWorkbenchId(routeWorkbenchProject(route));
+      projectWorkbenchNow.current = routeWorkbenchProject(route);
+      setManagerState(routeManager(route));
+      if (mode === 'agent' && route.project && !route.selected && !route.manager) chooseLayout('workbench');
+      if (mode === 'agent' && !route.selected && !route.project && !route.manager)
+        setHomeRequest(value => value + 1);
+    },
+  });
   useEffect(() => {
     let prefix = '',
       pending: ReturnType<typeof setTimeout> | undefined;
