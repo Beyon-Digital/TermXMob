@@ -1,4 +1,5 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {pinClassicShell} from './test-utils/classic-shell';
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import App from './App';
 // Evaluate the real lazy conversation module before the journey starts. The
@@ -36,7 +37,7 @@ let rows:Map<string,Session>,focusedHistory:ReturnType<typeof deferred<ReturnTyp
 const turnCalls=()=>mocks.request.mock.calls.filter(([path,init])=>typeof path==='string'&&path.endsWith('/turns')&&(init as RequestInit|undefined)?.method==='POST');
 
 beforeEach(()=>{
- vi.clearAllMocks();localStorage.clear();sessionStorage.clear();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();consumedTransfers.clear();
+ vi.clearAllMocks();localStorage.clear();pinClassicShell();sessionStorage.clear();sessionDrafts.clear();draftWrites.clear();submittingDrafts.clear();draftSubmissionOwners.clear();consumedTransfers.clear();
  history.replaceState(null,'','/session/previous');
  vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
  rows=new Map([['previous',chat('previous','Previous conversation draft')],['other-child',chat('other-child','Saved child draft')]]);

@@ -8,6 +8,7 @@ import {allTabs, editorGroups, type Group, type Split} from '../lib/layout/model
 import {LayoutBookStore, V2_PREFIX} from '../lib/layout/store';
 import {SHELL_ENGINE_KEY, resetShellEngineMemory} from '../lib/shell-engine';
 import {useBuffers} from '../features/editor/buffer-store';
+import v1Books from '../lib/layout/fixtures/v1-books.json';
 
 const fixture = vi.hoisted(() => ({
   owner: 'tree-shell-owner',
@@ -60,7 +61,8 @@ vi.mock('../lib/workspace-data', () => ({
     clear() {}
   },
 }));
-vi.mock('../lib/session-changes', () => ({
+vi.mock('../lib/session-changes', async original => ({
+  ...(await original<typeof import('../lib/session-changes')>()),
   useSessionChanges: () => ({scope: 'fixture', available: true, unavailableReason: null, data: null, error: null, loading: false, refresh: async () => {}}),
 }));
 vi.mock('../features/CompanionHabitat', () => ({default: () => null}));
@@ -195,49 +197,46 @@ async function ready() {
 }
 
 describe('the layout engine flag', () => {
-  it('shows the old dock by default and the tab groups with ?shell=ide', async () => {
+  it('shows the tab groups by default and the classic dock with ?shell=classic', async () => {
     openUrl('?session=conversation');
     const view = render(<App />);
-    await screen.findByRole('region', {name: 'conversation panel'});
-    expect(screen.queryByRole('tablist', {name: /Editor group/})).not.toBeInTheDocument();
-    view.unmount();
-    openUrl('?session=conversation&shell=ide');
-    render(<App />);
     await ready();
     expect(screen.queryByRole('region', {name: 'conversation panel'})).not.toBeInTheDocument();
-  });
-
-  it('follows the stored preference, and the address wins over it', async () => {
-    localStorage.setItem(SHELL_ENGINE_KEY, 'on');
-    openUrl('?session=conversation');
-    const view = render(<App />);
-    await ready();
     view.unmount();
     openUrl('?session=conversation&shell=classic');
     render(<App />);
     await screen.findByRole('region', {name: 'conversation panel'});
+    expect(screen.queryByRole('tablist', {name: /Editor group/})).not.toBeInTheDocument();
   });
 
-  it('turns on from Settings, now, without a reload, and back off again', async () => {
+  it('follows the stored preference, and the address wins over it', async () => {
+    localStorage.setItem(SHELL_ENGINE_KEY, 'off');
+    openUrl('?session=conversation');
+    const view = render(<App />);
+    await screen.findByRole('region', {name: 'conversation panel'});
+    view.unmount();
+    openUrl('?session=conversation&shell=ide');
+    render(<App />);
+    await ready();
+  });
+
+  it('turns the classic layout on from Settings, now, without a reload, and back off again', async () => {
     const user = userEvent.setup();
     openUrl('?session=conversation');
     render(<App />);
-    await screen.findByRole('region', {name: 'conversation panel'});
+    await ready();
     await user.click(screen.getByRole('button', {name: /^Settings/}));
-    const toggle = await screen.findByRole('checkbox', {name: 'Use the new workspace layout (preview)'});
+    const toggle = await screen.findByRole('checkbox', {name: 'Use the classic workspace layout (deprecated)'});
     expect(toggle).not.toBeChecked();
     await user.click(toggle);
-    await ready();
-    expect(localStorage.getItem(SHELL_ENGINE_KEY)).toBe('on');
-    // The Settings dialog belonged to the old layout; the new one starts at the workspace.
-    expect(screen.queryByRole('dialog', {name: 'Settings'})).not.toBeInTheDocument();
+    await screen.findByRole('region', {name: 'conversation panel'});
+    expect(localStorage.getItem(SHELL_ENGINE_KEY)).toBe('off');
+    // The classic layout starts at the workspace; its Settings is a dialog.
     await user.click(screen.getByRole('button', {name: /^Settings/}));
-    const tab = await screen.findByRole('tab', {name: 'Settings'});
-    expect(tab).toHaveAttribute('aria-selected', 'true');
-    const back = await screen.findByRole('checkbox', {name: 'Use the new workspace layout (preview)'});
+    const back = await screen.findByRole('checkbox', {name: 'Use the classic workspace layout (deprecated)'});
     expect(back).toBeChecked();
     await user.click(back);
-    await screen.findByRole('region', {name: 'conversation panel'});
+    await screen.findByRole('tablist', {name: /Editor group 1 tabs/});
     expect(localStorage.getItem(SHELL_ENGINE_KEY)).toBeNull();
   });
 
@@ -246,8 +245,8 @@ describe('the layout engine flag', () => {
     render(<App />);
     await ready();
     await user.click(screen.getByRole('button', {name: /^Settings/}));
-    const toggle = await screen.findByRole('checkbox', {name: 'Use the new workspace layout (preview)'});
-    expect(toggle).toBeChecked();
+    const toggle = await screen.findByRole('checkbox', {name: 'Use the classic workspace layout (deprecated)'});
+    expect(toggle).not.toBeChecked();
     expect(toggle).toBeDisabled();
   });
 });
@@ -386,6 +385,29 @@ describe('the tab layout in the shell', () => {
     expect(names).toEqual(['Editor']);
     await waitFor(() => expect(stored()).not.toBeNull());
     expect(localStorage.getItem(v1.key)).toBe(raw);
+  });
+
+  it('gives a profile with saved v1 presets its layouts as named layouts, from the committed v1 fixture', async () => {
+    // The fixture is written by the v1 code itself (see lib/layout/migrate-v1.test.ts), keyed to its own owner and device.
+    fixture.owner = v1Books.owner;
+    localStorage.setItem('termx-layout-device-v1', v1Books.device);
+    const v1Key = 'termx-layout-presets-v1:' + JSON.stringify([v1Books.owner, v1Books.device]);
+    localStorage.setItem(v1Key, v1Books.books.custom);
+    openUrl('?session=conversation');
+    render(<App />);
+    await waitFor(() => expect(screen.getAllByRole('tablist').length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(screen.getAllByRole('button', {name: 'Open editor'})[0]).toBeEnabled());
+    // The layout the profile last used is open: editor, review and conversation groups.
+    await waitFor(() => expect(stored()).not.toBeNull());
+    const named = (stored().named as {name: string}[]).map(item => item.name);
+    expect(named).toContain('Review layout');
+    for (const preset of ['Chat', 'Code + chat', 'Browser + chat', 'Focus']) expect(named).toContain(preset);
+    // The profile's own preset is offered next to the built-in ones, and the v1 copy is left untouched.
+    fireEvent.keyDown(window, {key: 'l', ctrlKey: true, altKey: true});
+    const dialog = await screen.findByRole('dialog', {name: 'Saved layout presets'});
+    expect(within(dialog).getByText('Review layout')).toBeInTheDocument();
+    expect(localStorage.getItem(v1Key)).toBe(v1Books.books.custom);
+    fixture.owner = 'tree-shell-owner';
   });
 
   it('opens Settings as a tab, not a dialog, and asks before closing it with unsaved edits', async () => {
@@ -632,9 +654,9 @@ describe('detached windows and phones', () => {
   });
 });
 
-describe('the old dock is untouched', () => {
+describe('the classic dock is untouched', () => {
   it('keeps its own storage and does not create a v2 book', async () => {
-    openUrl('?session=conversation');
+    openUrl('?session=conversation&shell=classic');
     render(<App />);
     await screen.findByRole('region', {name: 'conversation panel'});
     await act(async () => {

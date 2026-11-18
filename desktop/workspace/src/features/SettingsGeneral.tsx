@@ -41,7 +41,7 @@ export default function SettingsGeneral({account,theme,onTheme,bindings,onBindin
   </div>
   <div className="settings-layout-preview" data-settings-autosave>
    <SettingsSection level={3} title="Workspace layout">
-    <SettingsRow label="Use the new workspace layout (preview)" description={engineLocked?'The address of this window sets the layout. Remove ?shell from it to use this setting.':'Tabs in split groups, a bottom panel and Settings as a tab. Your saved layouts carry over. Takes effect now.'}>{control=><input type="checkbox" {...control} checked={engine==='tree'} disabled={engineLocked} onChange={event=>writeShellEngine(event.target.checked?'tree':'legacy')}/>}</SettingsRow>
+    <SettingsRow label="Use the classic workspace layout (deprecated)" description={engineLocked?'The address of this window sets the layout. Remove ?shell from it to use this setting.':'The old dock of panels and presets, kept for one release. Takes effect now. Removal is scheduled for the release after this one.'}>{control=><input type="checkbox" {...control} checked={engine==='legacy'} disabled={engineLocked} onChange={event=>writeShellEngine(event.target.checked?'legacy':'tree')}/>}</SettingsRow>
    </SettingsSection>
   </div>
   <section className="settings-block" aria-labelledby="preferences-shortcuts" data-settings-autosave>

@@ -1,4 +1,5 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {pinClassicShell} from './test-utils/classic-shell';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import App from './App';
 import type {Session} from './lib/api';
@@ -25,7 +26,7 @@ vi.mock('@tanstack/react-virtual',()=>({useVirtualizer:()=>({getTotalSize:()=>0,
 const project={id:'project',name:'Project',path:'/synthetic/project'};
 function chat(id:string):Session{return {id,title:id,engine:'internal',mode:'agent',pinned:false,archived:false,draft_text:'',revision:1,updated_at:0,scroll:0,turns:[]};}
 beforeEach(()=>{
- localStorage.clear();sessionStorage.clear();history.replaceState(null,'','/manage/projects');
+ localStorage.clear();pinClassicShell();sessionStorage.clear();history.replaceState(null,'','/manage/projects');
  vi.stubGlobal('innerWidth',1280);
  vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
  mocks.pins.mockResolvedValue({revision:0,projects:[]});mocks.list.mockResolvedValue([]);mocks.ensure.mockResolvedValue({session:chat('main')});

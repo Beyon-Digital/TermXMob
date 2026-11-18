@@ -1,19 +1,21 @@
 import {useSyncExternalStore} from 'react';
 
 /**
- * Which layout engine the workspace shell runs. `legacy` is the dock of seven panels and eight presets; `tree` is the
- * tab-group layout (`lib/layout/`). The new one is a preview: it is chosen by `?shell=ide` in the address, or by the
- * Settings toggle "Use the new workspace layout (preview)", which is stored here. The default stays `legacy` until the old
- * dock is removed.
+ * Which layout engine the workspace shell runs. `tree` is the tab-group IDE layout (`lib/layout/`) and is the default.
+ * `legacy` is the classic dock of seven panels and eight presets, kept for one release as a rollback path.
+ *
+ * @deprecated The `legacy` engine (and the Settings toggle that selects it) is deprecated: removal scheduled for the
+ * release after this one. It is chosen by `?shell=classic` in the address, or by the stored value `off` behind
+ * "Use the classic workspace layout (deprecated)" in Settings > General.
  */
 
 export type ShellEngine = 'legacy' | 'tree';
 
-/** The localStorage key behind the Settings toggle. `on` selects the new layout; anything else is the old one. */
+/** The localStorage key behind the Settings toggle. `off` selects the classic dock; anything else is the IDE layout. */
 export const SHELL_ENGINE_KEY = 'termx-new-workspace-layout';
 const CHANGED = 'termx-shell-engine-changed';
 
-/** `?shell=ide` forces the new layout and `?shell=classic` forces the old one; the address wins over the toggle. */
+/** `?shell=ide` forces the IDE layout and `?shell=classic` forces the classic dock; the address wins over the toggle. */
 export function urlShellEngine(search: string = location.search): ShellEngine | null {
   const value = new URLSearchParams(search).get('shell');
   if (value === 'ide') return 'tree';
@@ -23,9 +25,9 @@ export function urlShellEngine(search: string = location.search): ShellEngine | 
 
 export function storedShellEngine(storage: Pick<Storage, 'getItem'> | null = safeStorage()): ShellEngine {
   try {
-    return storage?.getItem(SHELL_ENGINE_KEY) === 'on' ? 'tree' : 'legacy';
+    return storage?.getItem(SHELL_ENGINE_KEY) === 'off' ? 'legacy' : 'tree';
   } catch {
-    return 'legacy';
+    return 'tree';
   }
 }
 
@@ -35,7 +37,7 @@ export function readShellEngine(search: string = location.search, storage: Pick<
 
 export function writeShellEngine(engine: ShellEngine, storage: Pick<Storage, 'setItem' | 'removeItem'> | null = safeStorage()) {
   try {
-    if (engine === 'tree') storage?.setItem(SHELL_ENGINE_KEY, 'on');
+    if (engine === 'legacy') storage?.setItem(SHELL_ENGINE_KEY, 'off');
     else storage?.removeItem(SHELL_ENGINE_KEY);
     memory = null;
   } catch {
@@ -70,7 +72,7 @@ function subscribe(listener: () => void) {
 
 /** The engine in force now, live: the Settings toggle takes effect without a reload. */
 export function useShellEngine(): ShellEngine {
-  return useSyncExternalStore(subscribe, snapshot, () => 'legacy');
+  return useSyncExternalStore(subscribe, snapshot, () => 'tree');
 }
 
 /** The toggle is shown but cannot win while the address forces an engine. */

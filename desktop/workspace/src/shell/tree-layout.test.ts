@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('the shell engine flag', () => {
-  it('reads ?shell=ide as the tab layout and ?shell=classic or legacy as the old dock', () => {
+  it('reads ?shell=ide as the tab layout and ?shell=classic or legacy as the classic dock', () => {
     expect(urlShellEngine('?shell=ide')).toBe('tree');
     expect(urlShellEngine('?shell=classic')).toBe('legacy');
     expect(urlShellEngine('?shell=legacy')).toBe('legacy');
@@ -25,20 +25,24 @@ describe('the shell engine flag', () => {
     expect(urlShellEngine('')).toBeNull();
   });
 
-  it('defaults to the old dock, follows the stored choice, and lets the address win', () => {
+  it('defaults to the IDE layout, follows the stored choice, and lets the address win', () => {
+    expect(readShellEngine('', localStorage)).toBe('tree');
+    localStorage.setItem(SHELL_ENGINE_KEY, 'off');
+    expect(storedShellEngine(localStorage)).toBe('legacy');
     expect(readShellEngine('', localStorage)).toBe('legacy');
+    expect(readShellEngine('?shell=ide', localStorage)).toBe('tree');
+    localStorage.setItem(SHELL_ENGINE_KEY, 'maybe');
+    expect(readShellEngine('', localStorage)).toBe('tree');
+    // A value stored by the earlier opt-in preview still means the IDE layout.
     localStorage.setItem(SHELL_ENGINE_KEY, 'on');
-    expect(storedShellEngine(localStorage)).toBe('tree');
     expect(readShellEngine('', localStorage)).toBe('tree');
     expect(readShellEngine('?shell=classic', localStorage)).toBe('legacy');
-    localStorage.setItem(SHELL_ENGINE_KEY, 'maybe');
-    expect(readShellEngine('', localStorage)).toBe('legacy');
   });
 
   it('writes and clears the stored choice, and survives storage that throws', () => {
-    writeShellEngine('tree', localStorage);
-    expect(localStorage.getItem(SHELL_ENGINE_KEY)).toBe('on');
     writeShellEngine('legacy', localStorage);
+    expect(localStorage.getItem(SHELL_ENGINE_KEY)).toBe('off');
+    writeShellEngine('tree', localStorage);
     expect(localStorage.getItem(SHELL_ENGINE_KEY)).toBeNull();
     const broken = {
       getItem: () => {
@@ -51,8 +55,8 @@ describe('the shell engine flag', () => {
         throw new Error('blocked');
       },
     };
-    expect(storedShellEngine(broken)).toBe('legacy');
-    expect(() => writeShellEngine('tree', broken)).not.toThrow();
+    expect(storedShellEngine(broken)).toBe('tree');
+    expect(() => writeShellEngine('legacy', broken)).not.toThrow();
   });
 
   it('is named so a person can find and clear it', () => {
