@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      os:
+        description: 'JSON list of runners for the python job, e.g. ["windows-latest"] (default: all three)'
+        default: ''
+      pytest_args:
+        description: 'When set, run only `pytest <args>` on those runners (diagnosis); the other jobs are skipped'
+        default: ''
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,6 +19,7 @@ concurrency:
 
 jobs:
   workspace:
+    if: inputs.pytest_args == ''
     # Playwright 1.58 cannot install its browser dependencies on ubuntu-26.04
     # (what ubuntu-latest now resolves to), so pin a supported release.
     runs-on: ubuntu-24.04
@@ -62,7 +70,7 @@ jobs:
       # PRs run Linux only (macOS runners are the expensive ones and macOS is
       # tested locally before pushing); pushes to main get the full OS matrix.
       matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || (inputs.os != '' && fromJSON(inputs.os)) || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -78,17 +86,23 @@ jobs:
       # files is independent per test (own tmp config dir), so it runs on all cores; those two start real worker
       # runtimes with timing budgets that fail under CPU contention, so they run alone afterwards.
       # --durations prints the slowest tests so regressions in run time are visible in every job.
+      - name: Test (diagnosis)
+        if: inputs.pytest_args != ''
+        shell: bash
+        run: uv run --locked --extra development --extra media pytest -p no:cacheprovider ${{ inputs.pytest_args }}
       - name: Test (parallel)
+        if: inputs.pytest_args == ''
         run: >
           uv run --locked --extra development --extra media pytest -q -n auto --durations=20
           --ignore=tests/test_workflow_integration.py --ignore=tests/test_workflow_runtime.py
       - name: Test (real workflow runtime, serial)
+        if: inputs.pytest_args == ''
         run: uv run --locked --extra development --extra media pytest -q --durations=10 tests/test_workflow_integration.py tests/test_workflow_runtime.py
 
   linux-desktop:
     name: linux desktop capture
     # PRs only run the python test matrix; desktop capture runs on main/dispatch.
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.pytest_args == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
