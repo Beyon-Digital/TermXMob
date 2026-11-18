@@ -1,0 +1,46 @@
+/* The command center dialog: one input over a list of files and commands. Tokens only. */
+@layer shell {
+  .quick-open {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    width: min(640px, calc(100vw - var(--space-32)));
+  }
+  .quick-open-list {
+    display: flex;
+    flex-direction: column;
+    max-height: min(50dvh, 360px);
+    overflow-y: auto;
+  }
+  .quick-open-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-12);
+    min-height: var(--ide-row-h);
+    padding: 0 var(--space-12);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .quick-open-row[aria-selected="true"] {
+    background: var(--surface-2);
+  }
+  .quick-open-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quick-open-group {
+    flex: none;
+    color: var(--text-3);
+    font-size: var(--text-xs);
+  }
+  .quick-open-note {
+    min-height: var(--line-xs);
+    margin: 0;
+    color: var(--text-2);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+}

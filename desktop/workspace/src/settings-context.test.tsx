@@ -1,4 +1,5 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {pinClassicShell} from './test-utils/classic-shell';
 import {cleanup,configure,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import App from './App';
 
@@ -36,7 +37,7 @@ vi.mock('./features/Managers',()=>({default:({section,projectId,sessionId}:{sect
 
 beforeEach(()=>{
  configure({asyncUtilTimeout:10000});
- localStorage.clear();history.replaceState(null,'','/?session=conversation&layout=chat');
+ localStorage.clear();pinClassicShell();history.replaceState(null,'','/?session=conversation&layout=chat');
  vi.stubGlobal('innerWidth',1280);
  vi.stubGlobal('matchMedia',vi.fn(()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()})));
  vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}});

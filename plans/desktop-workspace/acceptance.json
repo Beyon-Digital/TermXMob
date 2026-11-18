@@ -7,13 +7,15 @@
       "id": "UX-01",
       "requirement": "Unlock \u2192 project/session \u2192 chat \u2192 workbench with no forced dashboard or mobile-navigation detour.",
       "status": "partial",
-      "evidence": "Independent React DOM shell, managed sign-in and canonical project/session entry verified against actual host. Corrected content-ready 1440/390 renders inspected; same contract3 native bundle compiles. Installed native unlock journey remains a packaging gate."
+      "evidence": "Independent React DOM shell, managed sign-in and canonical project/session entry verified against actual host. Corrected content-ready 1440/390 renders inspected; same contract3 native bundle compiles. Installed native unlock journey remains a packaging gate.",
+      "note": "IDE shell (U7): a first-run host with an owner and no project, then login, opens the Main agent chat with a composer, one primary action in the Agents view and no forced dashboard, at 1280 and 375 (tests/workspace_ide_design_e2e.py, first-run captures in docs/evidence/ide-shell/u7/). Still partial: unlock-to-workbench on the installed native app is not exercised."
     },
     {
       "id": "UX-02",
       "requirement": "Chat/Workbench/Browser layout moves preserve conversation/native IDs, active runs, drafts, scroll, dirty buffers and PTYs.",
       "status": "partial",
-      "evidence": "Actual rendered Git proof preserves active canonical run, draft, dirty buffer and the same restricted PTY through Chat/Workbench moves, with exact real output assertions. Browser workflow preserves active task through takeover/private resume. Concurrent dirty popup buffers survive both reloads with distinct IndexedDB slots and unchanged disk. Native IDs/session checkout continuity and receipt recovery have regression coverage; installed native window handoff proof remains open."
+      "evidence": "Actual rendered Git proof preserves active canonical run, draft, dirty buffer and the same restricted PTY through Chat/Workbench moves, with exact real output assertions. Browser workflow preserves active task through takeover/private resume. Concurrent dirty popup buffers survive both reloads with distinct IndexedDB slots and unchanged disk. Native IDs/session checkout continuity and receipt recovery have regression coverage; installed native window handoff proof remains open.",
+      "note": "IDE shell (U7): in a real Chromium against a real host, moving a tab between groups keeps its editor, shell and browser stream mounted (tests/workspace_ide_shell_e2e.py); the chat draft and an attachment survive switching to a file tab, Studio, Data and Projects and back, and Studio's unsent prompt survives too (tests/workspace_ide_design_e2e.py); an open file's unsaved edits survive a split. Layout engine, keep-alive and v1 migration have unit tests (lib/layout, components/shell/*keepalive*, shell/tree-shell.test.tsx). Still partial: scroll position and native window handoff are not proven on the new shell. Earlier evidence above was captured on the retired chat-first shell and is kept as history."
     },
     {
       "id": "CHAT-01",
@@ -91,7 +93,8 @@
       "id": "CAP-01",
       "requirement": "Opt-in window/tab capture has persistent indicator, excludes private mode, and produces an editable/redacted/tested skill draft\u2014not an auto-enabled recording.",
       "status": "verified",
-      "evidence": "Opt-in exact-window/tab recording, private-epoch exclusion, editable/redacted/parameterized draft and separate replay before activation pass. Actual owned macOS, CI X11 and Windows PrintWindow captures qualify named window ports; verification/windows-owned-capture.json proves exact360x240 pixels and foreign-owner refusal without user-desktop capture. Installed native GUI remains separately tracked. Global owner/session/policy-scoped capture indicator persists outside Browser/Computer and exposes no private titles/URLs/values. Actual4theme/zoom workflows in verification/browser-accessibility-capture.json prove recording\u2192Chat indicator\u2192Open\u2192Stop with real tab recording ended."
+      "evidence": "Opt-in exact-window/tab recording, private-epoch exclusion, editable/redacted/parameterized draft and separate replay before activation pass. Actual owned macOS, CI X11 and Windows PrintWindow captures qualify named window ports; verification/windows-owned-capture.json proves exact360x240 pixels and foreign-owner refusal without user-desktop capture. Installed native GUI remains separately tracked. Global owner/session/policy-scoped capture indicator persists outside Browser/Computer and exposes no private titles/URLs/values. Actual4theme/zoom workflows in verification/browser-accessibility-capture.json prove recording\u2192Chat indicator\u2192Open\u2192Stop with real tab recording ended.",
+      "note": "IDE shell (U7): the persistent capture indicator and Stop capture stay visible, focusable and uncovered in the status bar at 1280 and 375 (tests/workspace_ide_design_e2e.py, status response faked, never mutated)."
     },
     {
       "id": "MEM-01",
@@ -121,7 +124,8 @@
       "id": "GIT-01",
       "requirement": "Two parallel worktrees \u2192 edits/tests \u2192 stage/commit/push \u2192 PR/checks; conflicts, failed checks and cleanup are handled without discarding dirty user files.",
       "status": "verified",
-      "evidence": "verification/git-workspace-rendered.json proves two actual UI-created worktrees, selected-hunk stage/unstage, edits and passing/failing real PTY checks, independent commits/exact-confirmed local-bare pushes, divergent pull refusal and dirty cleanup preservation. Clean B removal retains its branch and resets Delivery to Project without an alert while the active chat remains on A. Actual draft PR28/checks are inspected through UI; earlier production push/PR creation succeeded. No paid query or external mutation in this proof."
+      "evidence": "verification/git-workspace-rendered.json proves two actual UI-created worktrees, selected-hunk stage/unstage, edits and passing/failing real PTY checks, independent commits/exact-confirmed local-bare pushes, divergent pull refusal and dirty cleanup preservation. Clean B removal retains its branch and resets Delivery to Project without an alert while the active chat remains on A. Actual draft PR28/checks are inspected through UI; earlier production push/PR creation succeeded. No paid query or external mutation in this proof.",
+      "note": "IDE shell (U7): Source control stages, unstages (per hunk and per file), commits, pushes and now discards through the reviewed delivery operations in a real browser (tests/workspace_scm_e2e.py; backend tests/test_delivery_discard.py). The status above is unchanged."
     },
     {
       "id": "EXT-01",
@@ -139,7 +143,8 @@
       "id": "DOCK-01",
       "requirement": "Drag/keyboard dock, detach/re-dock, concurrent views, missing-monitor restore, browser popup denial and unsaved-buffer conflicts are recoverable.",
       "status": "partial",
-      "evidence": "verification/browser-window-lifecycle.json proves actual toolbar/per-panel popup close/reopen, named active-window focus, image-only draft recovery and conflicting main draft refusal. Acknowledged re-dock closes source only after durable main persistence; both dirty copies remain visible, same canonical task/PTY continue and disk stays unchanged. Drag/tab-region/keyboard docking and popup denial have source tests; native monitor-aware restore compiles. Installed native detach/re-dock/missing-monitor recovery remains open."
+      "evidence": "verification/browser-window-lifecycle.json proves actual toolbar/per-panel popup close/reopen, named active-window focus, image-only draft recovery and conflicting main draft refusal. Acknowledged re-dock closes source only after durable main persistence; both dirty copies remain visible, same canonical task/PTY continue and disk stays unchanged. Drag/tab-region/keyboard docking and popup denial have source tests; native monitor-aware restore compiles. Installed native detach/re-dock/missing-monitor recovery remains open.",
+      "note": "IDE shell (U7): split, move, resize, maximize and keyboard focus of tab groups are proven in a real browser (tests/workspace_ide_shell_e2e.py), the detach mapping to the seven valid_panel strings is pinned by shell/window-panel.test.ts and a Rust test, and the v1 dock presets migrate to named layouts. Still partial: installed native detach/re-dock, missing-monitor restore and unsaved-buffer conflict recovery across windows have not been re-run on the new shell. Earlier evidence above was captured on the retired chat-first shell and is kept as history."
     },
     {
       "id": "MEDIA-01",
@@ -174,14 +179,16 @@
     {
       "id": "A11Y-01",
       "requirement": "Keyboard-only browsing/workspace flows, screen-reader labels and meaningful content, contrast, 200% zoom and reduced motion work in both themes.",
-      "status": "verified",
-      "evidence": "verification/browser-accessibility-capture.json:34actual loaded states,0axe violations and132keyboard-only targets across both themes100%/200%, reduced motion/nooverflow. Actual human page typing/Escape, browserhandoff/private/takeover/resume, masked account form and persisted memory pass; textcontrast\u22655.01:1 and minimum canvas320CSSpx. Earlier8loadedChat/Workbench states retain useful200%editor and Split. Root inspected latest200%capture-in-Chat and account form. Human screen-reader speech and third-party remote page pixels remain explicit manual limits."
+      "status": "partial",
+      "evidence": "verification/browser-accessibility-capture.json:34actual loaded states,0axe violations and132keyboard-only targets across both themes100%/200%, reduced motion/nooverflow. Actual human page typing/Escape, browserhandoff/private/takeover/resume, masked account form and persisted memory pass; textcontrast\u22655.01:1 and minimum canvas320CSSpx. Earlier8loadedChat/Workbench states retain useful200%editor and Split. Root inspected latest200%capture-in-Chat and account form. Human screen-reader speech and third-party remote page pixels remain explicit manual limits.",
+      "note": "IDE shell (U7): axe-core 4.10.3 reports 0 violations for the default layout in both themes at 100% and 200% zoom (the 200% case is the 720px phone projection), reduced motion, no overflow, a visible focus ring and the editor menu inside the viewport (tests/workspace_accessibility_e2e.py, run in CI); the same checks pass for the command center, drawer, source control, Settings, Studio, Data and error/approval states (workspace_ide_shell_e2e.py, workspace_scm_e2e.py, workspace_settings_tls_e2e.py, workspace_ide_design_e2e.py). Still partial: the remote browser page flows (workspace_browser_accessibility_e2e.py) are still written for the classic layout, and human screen-reader speech remains a manual limit. Earlier evidence above was captured on the retired chat-first shell and is kept as history."
     },
     {
       "id": "VIEW-01",
       "requirement": "1280/1440/1920/ultrawide plus narrow-browser fallback; no page overflow, unreachable control, stranded window or forced Expo fallback.",
       "status": "partial",
-      "evidence": "Actual content-ready screenshots1280/1440/1920/2560/768/390 have no pageoverflow. Root inspected1440 and390: populated sidebar/messages, validatedSVGicons and collapsed narrow sidebar. Native missingmonitor/strandedwindow recovery remains platform gate."
+      "evidence": "Actual content-ready screenshots1280/1440/1920/2560/768/390 have no pageoverflow. Root inspected1440 and390: populated sidebar/messages, validatedSVGicons and collapsed narrow sidebar. Native missingmonitor/strandedwindow recovery remains platform gate.",
+      "note": "IDE shell (U7): the default layout has no horizontal overflow and axe-clean at 1280x900, 375x812, 320x812 and a short 375x420 window in light and dark (tests/workspace_ide_design_e2e.py, screenshots in docs/evidence/ide-shell/u7/). Still partial: 1440, 1920 and ultrawide were not captured on the new shell, and native stranded-window recovery remains a platform gate. Earlier evidence above was captured on the retired chat-first shell and is kept as history."
     },
     {
       "id": "REVIEW-01",
@@ -232,5 +239,5 @@
       "evidence": "Internal/Claude supported controlled-mode escape rejection and Codex/ACP exact coding approval callbacks pass native_action_review/browser_claude_mcp tests. Native sandbox fastpaths are documented native policy; Codex/ACP restricted browser/cloud modes without enforceable interception are refused, not represented as delivered capabilities."
     }
   ],
-  "updated_at": "2026-10-07"
+  "updated_at": "2026-11-18"
 }

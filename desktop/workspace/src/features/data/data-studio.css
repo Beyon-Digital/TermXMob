@@ -1,3 +1,4 @@
+@layer legacy {
 /* Data Studio uses the shared workspace tokens (--bg, --surface, --border, --accent ...) from agent-theme.css and defines none of its own. */
 .data-studio{position:relative;display:flex;min-height:0;height:100%;width:100%;overflow:hidden;background:var(--bg);color:var(--text);font-size:14px;line-height:20px}
 .data-studio svg,.data-dialog svg{flex-shrink:0;stroke-width:1.5}
@@ -160,3 +161,4 @@
 .data-picker-option[aria-selected=true]{font-weight:500}
 .data-picker-option:focus-visible{outline:var(--control-focus-ring,2px solid var(--accent));outline-offset:var(--control-focus-offset,-2px)}
 @media(pointer:coarse){.data-picker-option{min-height:44px}}
+}

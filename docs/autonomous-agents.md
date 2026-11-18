@@ -76,7 +76,9 @@ inhibitor (`caffeinate -i -w <host pid>` on macOS, `systemd-inhibit` around a wa
 the owner turned on **keep awake** (`update_host_settings(keep_awake: true)`, needs `host-admin`).
 The inhibitor is tied to the host process, so a crash releases it. The display may still sleep.
 `host_status.keep_awake` shows whether it is held, why, and any error (`supported: false` where the
-OS offers no mechanism).
+OS offers no mechanism). **Settings > Access & sessions > Always-on host** shows this status and changes
+keep awake and the terminal mode; `host_status.holder.setting` is the saved `pty_holder` choice and
+`env_override` says `TERMX_PTY_HOLDER` overrides it (`requested` is what is in force).
 
 **Health.** `host_status` (query) and `host_status_events` (subscription, snake_case, `machine-view`;
 a managed principal also needs `host-admin`) report uptime, version, the service supervisor state,
@@ -296,7 +298,10 @@ ignored. The reply is marked `untrusted`, redacted and capped at 50,000 characte
 (20,000 by default); it is data, never instructions.
 
 `web_search` is hidden until a backend is configured. One backend is implemented,
-the Brave Search API. Store its key as the `web-search` credential or set
+the Brave Search API. Store its key as the `web-search` credential (**Settings >
+Tools & connections > Web search**, or GraphQL `set_web_search_key` and
+`clear_web_search_key`, which need `ai-settings` and never return the key;
+`web_search_status` reports `available` and where the key comes from) or set
 `TERMX_AI_WEB_SEARCH_API_KEY` on the host. `TERMX_WEB_SEARCH_URL` points it at
 another endpoint (for example a compatible self-hosted service; that exact origin
 is then allowed even if it is private) and `TERMX_WEB_SEARCH_PROVIDER` selects the

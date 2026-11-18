@@ -1,113 +1,6 @@
+@layer legacy {
 /* Shared workspace foundation from the user-supplied native-app references.
    Agent and Studio keep their own content layouts over the same neutral chrome. */
-html:root:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) {
-  --bg: #111111;
-  --surface: #212121;
-  --surface-2: #303030;
-  --border: #2e2e2e;
-  --border-strong: #424242;
-  --text: #ececec;
-  --text-2: #b4b4b4;
-  --text-3: #9b9b9b;
-  --accent: #f4f4f4;
-  --accent-hover: #d9d9d9;
-  --accent-fg: #111111;
-  --danger: #f0877e;
-  --success: #6bc48f;
-  --agent-frame-bg: #212121;
-  --agent-canvas-bg: var(--bg);
-  --agent-sidebar-bg: #171717;
-  --agent-rail-width: 52px;
-  --agent-canvas-radius: 16px;
-  --agent-composer-bg: #303030;
-  --agent-user-bg: #212121;
-  --agent-focus: #9b9b9b;
-  --control-focus-ring: 2px solid var(--agent-focus);
-  --control-focus-offset: -2px;
-  --agent-link: #8bbfdf;
-  --agent-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.4);
-  --agent-scrim: rgb(0 0 0 / 0.4);
-  --shadow-overlay: var(--agent-shadow-overlay);
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Geist Variable', 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
-  --background: var(--bg);
-  --foreground: var(--text);
-  --secondary: var(--text-2);
-  --sidebar: var(--agent-sidebar-bg);
-  --muted: var(--surface-2);
-  --accent-soft: var(--surface-2);
-  --accent-foreground: var(--accent-fg);
-  --destructive: var(--danger);
-  --warning: var(--text-2);
-  --warning-soft: var(--surface-2);
-  --surface-raised: var(--surface);
-  --border-subtle: var(--border);
-  --radius: 8px;
-  --radius-sm: 8px;
-  --radius-md: 8px;
-  --radius-lg: 16px;
-  --agent-radius: 8px;
-  --agent-radius-lg: 16px;
-  --agent-space-4: 4px;
-  --agent-space-8: 8px;
-  --agent-space-12: 12px;
-  --agent-space-16: 16px;
-  --agent-space-24: 24px;
-  --agent-space-32: 32px;
-  --agent-space-48: 48px;
-  --agent-space-64: 64px;
-  --agent-text-xs: 12px;
-  --agent-text-sm: 14px;
-  --agent-text-base: 16px;
-  --agent-text-lg: 18px;
-  --agent-text-xl: 20px;
-  --agent-text-2xl: 24px;
-  --agent-line-xs: 16px;
-  --agent-line-sm: 20px;
-  --agent-line-base: 24px;
-  --agent-line-lg: 28px;
-  --agent-line-xl: 28px;
-  --agent-line-2xl: 32px;
-  --agent-control-height: 32px;
-  --agent-control-default: 40px;
-  --agent-touch-height: 44px;
-  --agent-header-height: 48px;
-  --agent-sidebar-row-height: 36px;
-  --agent-reading-width: 736px;
-  --agent-content-width: 1120px;
-  --agent-prose-width: 68ch;
-  --motion-fast: 140ms;
-  --motion-standard: 180ms;
-  --motion-exit: 120ms;
-  --motion-ease: cubic-bezier(.2,.8,.2,1);
-  font-family: var(--font-sans);
-  font-size: var(--agent-text-base);
-  line-height: var(--agent-line-base);
-  color: var(--text);
-  background: var(--bg);
-}
-html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data])[data-theme=light] {
-  --bg: #ffffff;
-  --surface: #fff;
-  --surface-2: #f0f0f0;
-  --border: #e5e5e5;
-  --border-strong: #cdcdcd;
-  --text: #171717;
-  --text-2: #5e5e5e;
-  --text-3: #686868;
-  --accent: #171717;
-  --accent-hover: #373737;
-  --accent-fg: #fff;
-  --danger: #b3261e;
-  --success: #2a7348;
-  --agent-frame-bg: #f0f0f0;
-  --agent-sidebar-bg: #f9f9f9;
-  --agent-composer-bg: #f4f4f4;
-  --agent-user-bg: #f4f4f4;
-  --agent-focus: #737373;
-  --agent-link: #0969b6;
-  --agent-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
-}
 
 /* Shared primitives also cover Radix portals outside the workspace element. */
 html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(button, input, textarea, select) { font-family: var(--font-sans); }
@@ -268,4 +161,5 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspa
 html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(.dialog-content, .studio-panel)[tabindex="-1"]:focus-visible,
 html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(.dialog-content, .studio-panel) :is(h1, h2, h3, h4)[tabindex="-1"]:focus-visible {
   outline: none;
+}
 }

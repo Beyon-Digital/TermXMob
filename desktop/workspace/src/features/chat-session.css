@@ -1,3 +1,4 @@
+@layer legacy {
 /* Transcript and composer hierarchy based on the official Cursor Agents Window
    and Codex composer references inspected for this redesign. */
 .chat-region.coding-session{--transcript-width:760px;position:relative}
@@ -128,7 +129,7 @@
 @media(prefers-reduced-motion:reduce){.chat-region.coding-session .message-actions{transition:none}.chat-region.coding-session .spin,.chat-region.coding-session .composer-send .spin,.chat-region.coding-session .run-activity .spin{animation:none}.chat-region.coding-session .conversation-scroll{scroll-behavior:auto}.mode-popover{transition:none;animation:none}}
 
 /* Agent follows the supplied native ChatGPT reference: one quiet reading column. */
-.workspace-shell[data-workspace=agent] .chat-region.coding-session{--transcript-width:var(--agent-reading-width,736px);--chat-control-size:40px;position:relative;color:var(--text);background:var(--bg)}
+.workspace-shell[data-workspace=agent] .chat-region.coding-session{--transcript-width:var(--agent-reading-width,720px);--chat-control-size:40px;position:relative;color:var(--text);background:var(--bg)}
 .workspace-shell[data-workspace=agent] .chat-region.coding-session>.conversation-scroll{padding:32px 32px 8px;scroll-padding-bottom:24px}
 .workspace-shell[data-workspace=agent] .chat-region.coding-session .message-list{max-width:var(--transcript-width)}
 .workspace-shell[data-workspace=agent] .chat-region.coding-session .message-row{padding-bottom:40px}
@@ -232,4 +233,5 @@ html[data-app-workspace=agent] .session-conversation-details .conversation-surfa
  .workspace-shell[data-workspace=agent] .chat-region.coding-session .composer-draft-body{min-height:24px}
  .workspace-shell[data-workspace=agent] .chat-region.coding-session.is-empty>.conversation-scroll{flex:1 1 auto;margin-top:0;margin-bottom:8px;min-height:0}
  .workspace-shell[data-workspace=agent] .chat-region.coding-session.is-empty>.composer-container{margin-bottom:0}
+}
 }

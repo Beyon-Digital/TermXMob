@@ -1,3 +1,4 @@
+@layer legacy {
 /* Voice settings. A list of engines, not a grid of cards; one border style, no decoration. */
 .voice-settings{display:flex;flex-direction:column;gap:8px}
 .voice-engines-row{display:block}
@@ -27,3 +28,4 @@
 .voice-agree input{margin-top:3px;accent-color:var(--accent)}
 .voice-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media(prefers-reduced-motion:reduce){.voice-progress>span{transition:none}}
+}

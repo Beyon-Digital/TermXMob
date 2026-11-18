@@ -1,3 +1,4 @@
+@layer legacy {
 /* The app owns the sidebar shell; one existing observer supplies this list. */
 html[data-app-workspace=agent] .orchestrator-status[data-presentation=sidebar]{border:0;background:transparent}
 html[data-app-workspace=agent] .coordination-sidebar{display:flex;flex-direction:column;gap:24px;min-height:0;min-width:0;height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:8px 12px 24px;color:var(--foreground);font-size:14px;line-height:20px}
@@ -40,3 +41,4 @@ html[data-app-workspace=agent] .orchestrator-sidebar-attention{display:flex;alig
 html[data-app-workspace=agent] .orchestrator-sidebar-attention>span{flex:1;min-width:120px}
 @media(pointer:coarse){html[data-app-workspace=agent] :is(.coordination-plan-trigger,.coordination-show-more,.coordination-sidebar-recent>summary,.coordination-sidebar-recent button){min-height:44px}}
 @media(prefers-reduced-motion:reduce){html[data-app-workspace=agent] .coordination-plan-trigger>svg:last-child{transition:none}}
+}

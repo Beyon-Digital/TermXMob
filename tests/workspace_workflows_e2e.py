@@ -42,7 +42,7 @@ def isolated_workflow_host(ui_dist, report):
         os.environ.update(TERMX_CONFIG_DIR=str(scratch / "config"), TERMX_AGENTS_DIR=str(scratch / "agents"), TERMX_ENGINE_STARTUP_REFRESH="0")
         from termx.app import create_app
         state, owner, project, calls = build_state(scratch)
-        app = create_app(state, web_dir=snapshot_ui(scratch, Path(ui_dist)))
+        app = create_app(state, web_dir=snapshot_ui(scratch, Path(ui_dist),classic=True))
         state.workspace.orchestrator.ensure(owner)
         def provider(request):
             report["backend_requests"].append({"method": request.method, "path": request.url.path})

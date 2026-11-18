@@ -1,6 +1,7 @@
+@layer legacy {
 /* The empty Agent conversation shares the composer's quiet, centered column. */
 .workspace-shell[data-workspace=agent] .chat-region.coding-session .chat-welcome{display:block;width:100%;min-height:0;padding:0;box-sizing:border-box;text-align:center}
-.workspace-shell[data-workspace=agent] .chat-welcome-content{width:100%;max-width:736px;margin:auto}
+.workspace-shell[data-workspace=agent] .chat-welcome-content{width:100%;max-width:720px;margin:auto}
 .workspace-shell[data-workspace=agent] .chat-welcome h2{max-width:100%;font-size:28px;font-weight:500;line-height:36px;letter-spacing:-.01em;margin:0;color:var(--text)}
 .workspace-shell[data-workspace=agent] .chat-welcome-ideas{width:fit-content;max-width:100%;margin:16px auto 0;font-size:14px;line-height:20px;color:var(--text-3)}
 .workspace-shell[data-workspace=agent] .chat-welcome-ideas[open]{width:100%;max-width:480px}
@@ -28,3 +29,4 @@
 @media(min-width:768px) and (pointer:fine){.workspace-shell[data-workspace=agent] .chat-welcome-ideas>summary{min-height:32px}}
 @media(pointer:coarse){.workspace-shell[data-workspace=agent] .chat-welcome-ideas>summary,.workspace-shell[data-workspace=agent] .chat-starters>.button{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.workspace-shell[data-workspace=agent] .chat-welcome-ideas>summary>svg{transition:none}}
+}

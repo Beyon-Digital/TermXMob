@@ -14,7 +14,7 @@ def run(destination):
         root=Path(temporary);os.environ.update(TERMX_CONFIG_DIR=str(root/'config'),TERMX_AGENTS_DIR=str(root/'agents'),TERMX_ENGINE_STARTUP_REFRESH='0')
         from termx.app import AppState,create_app
         state=AppState(passcode=None);owner=state.identity.setup_owner('manager-owner','manager-fixture-password-123')
-        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist',classic=True))
         memory=state.workspace.save_memory(owner,content='Original decision',provenance='Initial review',excluded=True)
         report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]

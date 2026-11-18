@@ -1,3 +1,4 @@
+@layer legacy {
 .chat-region .message-list{max-width:760px;margin-inline:auto;width:100%}
 .chat-region .message{width:100%;max-width:none;margin:0;padding:12px 2px 30px;min-width:0}
 .chat-region .message-assistant .message-content{max-width:100%;width:100%;font-size:15px;line-height:1.8}
@@ -171,3 +172,4 @@
 .workspace-shell[data-workspace=agent] .chat-region.coding-session .run-activity-body{border-left:0;margin-left:0;padding:8px 0 4px}
 .workspace-shell[data-workspace=agent] .chat-region.coding-session .response-actions .button{background:transparent}
 .workspace-shell[data-workspace=agent] .chat-region.coding-session .response-actions .button:not(:disabled):hover{background:var(--surface-2)}
+}

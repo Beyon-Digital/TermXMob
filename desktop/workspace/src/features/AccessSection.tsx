@@ -7,6 +7,7 @@ import {json,request} from '../lib/api';
 import type {AccessSummary,AdapterConfiguration,AdminPrincipal,AuthAdapter,AuthSession,HostIdentity} from '../lib/host-types';
 import LanTlsSettings from './LanTlsSettings';
 import HostServiceSettings from './HostServiceSettings';
+import HostAlwaysOnSettings from './HostAlwaysOnSettings';
 import {ManagedPairingForm} from './ManagedPairingForm';
 import IdentityGroupsManager from './IdentityGroupsManager';
 import AuditRetentionManager from './AuditRetentionManager';
@@ -101,6 +102,7 @@ export default function AccessSection({admin,me,projectId}:{admin:boolean;me:Hos
   return <ManagerPage section="access" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={{label:"Access & sessions",value:search,onChange:setSearch,count:count}}>
     <>
       {admin&&<Disclosure title="Host connectivity"><LanTlsSettings/><HostServiceSettings/></Disclosure>}
+      <Disclosure title="Always-on host"><HostAlwaysOnSettings admin={admin}/></Disclosure>
       {me.principal?.id&&me.session_id&&me.host_id&&<Disclosure title="Pair a device"><ManagedPairingForm actor={me as {principal:{id:string;display_name:string;scopes:string[]};session_id:string;host_id:string}}/></Disclosure>}
       <h3>Your sessions</h3>
       <p className="manager-help">{data?.access?.role||'Member'} · {data?.access?.runtime_boundary||'Host policy'} · Managed application permissions apply to each resource. Trusted host execution shares the host OS user.</p>

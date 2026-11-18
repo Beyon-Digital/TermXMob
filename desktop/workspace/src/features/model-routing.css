@@ -1,3 +1,4 @@
+@layer legacy {
 /* The pickers need the whole row, so the shared label-beside-control layout stacks at every width. */
 .model-routing .settings-row{flex-direction:column;align-items:stretch;gap:10px}
 .model-routing .settings-row-control{flex-shrink:1;width:100%}
@@ -7,3 +8,4 @@
 .model-routing-meta{grid-column:1/-1;margin:0;font-size:12px;line-height:1.5;color:var(--secondary)}
 @media (max-width:700px){.model-routing-controls{grid-template-columns:minmax(0,1fr)}}
 .model-routing-empty .settings-rows{display:none}
+}

@@ -44,7 +44,7 @@ def run(destination):
         folder=root/'project';folder.mkdir();(folder/'read.txt').write_text('Only the enrolled fixture file\n')
         project=state.projects.register(str(folder),name='Shared budget proof')
         state.agent.save_provider(provider_id='fixture',kind='openai-compatible',name='No-network budget fixture',base_url='http://127.0.0.1:1/v1',model='fixture',capabilities=['shell'],api_key='fixture-not-a-provider-key')
-        ui=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))));report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
+        ui=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True);report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         app=create_app(state,web_dir=ui)
         session=state.workspace.create_session(owner,title='Shared parent and children',project_id=project['id'],cwd=str(folder),provider_id='fixture',model='fixture',mode='agent')
         receipt_session=state.workspace.create_session(owner,title='Approved grant restart receipt',project_id=project['id'],cwd=str(folder),provider_id='fixture',model='fixture',mode='ask')

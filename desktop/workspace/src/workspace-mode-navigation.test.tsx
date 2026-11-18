@@ -1,4 +1,5 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
+import {pinClassicShell} from './test-utils/classic-shell';
 import {act, cleanup, configure, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import App from './App';
 import {LayoutPresetStore} from './lib/layout-presets';
@@ -44,7 +45,7 @@ vi.mock('./features/SettingsSurface', () => ({default: ({onClose}: {onClose: () 
 
 beforeEach(() => {
   configure({asyncUtilTimeout: 10000});
-  localStorage.clear(); sessionStorage.clear(); history.replaceState(null, '', '/?session=conversation&layout=chat');
+  localStorage.clear();pinClassicShell(); sessionStorage.clear(); history.replaceState(null, '', '/?session=conversation&layout=chat');
   vi.mocked(listSessions).mockClear();
   fixture.realObservation = false; fixture.coordinationUpdate=undefined;fixture.coordinationTarget=null;fixture.coordinationTasks=[];
   fixture.ensure.mockReset(); fixture.ensure.mockResolvedValue({session: fixture.session});

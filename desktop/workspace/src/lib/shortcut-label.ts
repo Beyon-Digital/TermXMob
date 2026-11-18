@@ -9,6 +9,6 @@ export function formatShortcut(binding: string, mac = isMac()) {
   return parts.map(part => names[part.toLowerCase()] || (part.length === 1 ? part.toUpperCase() : part)).join('+');
 }
 
-function isMac() {
+export function isMac() {
   return typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || '');
 }

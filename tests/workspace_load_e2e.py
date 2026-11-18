@@ -125,12 +125,12 @@ def run(destination):
                             report['agent_action_latencies_ms'].append(round((monotonic()-action_start)*1000));report['agent_actions']+=1;await asyncio.sleep(.15)
                     return terminal,(asyncio.create_task(activity()),gate)
                 pty,controls=host(prepare());stress,gate=controls
-                page.keyboard.press('Control+2');page.get_by_label('Terminal session').wait_for(timeout=90000);page.get_by_label('Terminal session').select_option(pty.id)
+                page.keyboard.press('Control+2');page.locator('[role=tab][data-session-id="'+pty.id+'"]').wait_for(timeout=90000);page.locator('[role=tab][data-session-id="'+pty.id+'"]').click()
                 page.get_by_role('button',name='Commands',exact=True).click();page.get_by_role('button',name='Focus browser',exact=False).click()
                 page.get_by_text('Live browser connected',exact=True).wait_for(timeout=90000)
                 other=context.new_page();attach_page(other);other.goto(f'http://127.0.0.1:{port}/?session={conversation["id"]}')
                 other.wait_for_function('(()=>{const e=document.querySelector("textarea[aria-label=Message]");return !!e&&!e.disabled})()',timeout=90000)
-                other.get_by_label('Terminal session').wait_for(timeout=90000);other.get_by_label('Terminal session').select_option(pty.id)
+                other.locator('[role=tab][data-session-id="'+pty.id+'"]').wait_for(timeout=90000);other.locator('[role=tab][data-session-id="'+pty.id+'"]').click()
                 other.get_by_role('button',name='Commands',exact=True).click();other.get_by_role('button',name='Focus browser',exact=False).click()
                 try:other.get_by_text('Live browser connected',exact=True).wait_for(timeout=15000)
                 except Exception:

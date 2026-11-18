@@ -53,7 +53,7 @@ def run(destination):
         sites=[ThreadingHTTPServer(('127.0.0.1',0),handler) for handler in (Checkout,Other)]
         for site in sites:threading.Thread(target=site.serve_forever,daemon=True).start()
         origin,other=[f'http://127.0.0.1:{site.server_port}' for site in sites]
-        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist',classic=True))
         state.browser.network=NetworkPolicy([origin,other]);report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         expected_bundle=os.environ.get('TERMX_TRANSACTION_UI_BUNDLE','index-Cq30cxjA.js')
         assert any(expected_bundle in asset for asset in report['UI_asset_snapshot']), 'Proof requires the named immutable coherent bundle'

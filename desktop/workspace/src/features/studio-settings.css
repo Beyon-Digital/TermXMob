@@ -1,3 +1,4 @@
+@layer legacy {
 /* Studio uses the shared workspace palette and a single readable settings column. */
 .media-workspace-settings { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .media-workspace-settings[hidden] { display: none !important; }
@@ -182,4 +183,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .studio-settings *, .studio-settings *::before, .studio-settings *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
 }

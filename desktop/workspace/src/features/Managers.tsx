@@ -14,7 +14,8 @@ import BotsSection from './BotsSection';
 import MemorySection from './MemorySection';
 import VoiceSection from './VoiceSection';
 import AccessSection from './AccessSection';
-import {Empty,ManagerPage,ManagerSearch,ManagerStatus} from './manager-ui';
+import WebSearchSettings from './WebSearchSettings';
+import {Disclosure,Empty,ManagerPage,ManagerSearch,ManagerStatus} from './manager-ui';
 import {useManagerLoad} from './use-manager';
 import './managers.css';
 
@@ -40,6 +41,7 @@ function PassivePage({section,projectId,sessionId,admin,me}:{section:'cloud'|'ho
     {section==='automations'&&<ScheduleManager projectId={projectId} sessionId={sessionId} version={version}/>}
     {section==='connections'&&<McpManager ownerKey={me.principal?.id?(me.host_id||location.origin)+':'+me.principal.id:undefined} projectId={projectId} admin={admin} search="" version={version} onChanged={refresh}/>}
     {section==='connections'&&<DesktopControl admin={admin}/>}
+    {section==='connections'&&<Disclosure title="Web search"><WebSearchSettings admin={admin}/></Disclosure>}
   </ManagerPage>;
 }
 

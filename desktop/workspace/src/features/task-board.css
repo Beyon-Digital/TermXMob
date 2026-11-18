@@ -1,3 +1,4 @@
+@layer legacy {
 /* The task board is the one place with live motion: the dot of a running task pulses. */
 .task-board{display:grid;gap:8px;min-width:0;margin:5px 0 12px}
 .task-rollup{display:grid;gap:6px}
@@ -43,3 +44,4 @@
 
 .task-menu>button[aria-disabled="true"]{cursor:not-allowed;opacity:.45}
 @media(max-width:600px){.task-row{margin-inline-start:calc(var(--depth) * 10px);padding-inline:4px}.task-chip{max-width:96px}.task-row-main{flex-wrap:wrap;row-gap:2px}.task-title{flex-basis:calc(100% - 60px)}.task-alert{flex-wrap:wrap;margin-inline-start:8px}.task-note{padding-inline-start:12px}.task-reassign{margin-inline-start:8px}}
+}

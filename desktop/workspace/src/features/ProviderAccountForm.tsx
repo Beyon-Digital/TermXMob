@@ -6,33 +6,44 @@ import {Input} from '../components/ui/input';
 import {Select} from '../components/ui/select';
 import {catalogAge} from '../lib/catalog-age';
 import type {ModelOverride,ModelOverrides,ProviderAccount,ProviderAccountInput} from '../lib/host-types';
+import {ANTHROPIC_KIND,PROVIDER_CHOICES} from '../lib/provider-kinds';
+import AnthropicAccountForm from './AnthropicAccountForm';
 import ProviderModelCatalog from './ProviderModelCatalog';
 import {useDirtyForm} from './settings-forms';
 
 const choices=[['shell','Shell tools'],['functions','Function tools'],['image','Image generation and editing'],['video','Video generation'],['audio','Audio transcription and speech'],['realtime','Live voice conversation']];
-const providers=[
- {id:'openai',label:'OpenAI',url:'https://api.openai.com/v1'},
- {id:'openrouter',label:'OpenRouter',url:'https://openrouter.ai/api/v1'},
- {id:'kie',label:'Kie.ai media adapter',url:'https://api.kie.ai'},
- {id:'custom',label:'Another compatible provider',url:''},
-];
+const providers=PROVIDER_CHOICES;
 const providerFor=(url:string)=>providers.find(provider=>provider.url===url)?.id||'custom';
 const modelList=(value:string)=>[...new Set(value.split(/[\n,]/).map(item=>item.trim()).filter(Boolean))];
 const validUrl=(value:string)=>{try{return ['http:','https:'].includes(new URL(value).protocol)}catch{return false}};
 type Errors={name?:string;base_url?:string;capabilities?:string;max_output_tokens?:string;request_timeout_s?:string};
 
-export default function ProviderAccountForm({account,onSave,onRefresh,onCancel,busy}:{account?:ProviderAccount;onSave:(input:ProviderAccountInput)=>Promise<unknown>;onRefresh?:()=>Promise<unknown>;onCancel?:()=>void;busy:boolean}){
+interface FormProps{account?:ProviderAccount;onSave:(input:ProviderAccountInput)=>Promise<unknown>;onRefresh?:()=>Promise<unknown>;onCancel?:()=>void;busy:boolean}
+type Start={provider:string;name:string};
+const startCapabilities=(provider?:string)=>provider==='kie'?['image','video']:provider==='openrouter'?['shell','functions','image','video']:['shell','functions'];
+
+/** Adding picks the provider type here; an Anthropic account has its own form because its key, models and request format differ. */
+export default function ProviderAccountForm(props:FormProps){
+ const [start,setStart]=useState<Start|null>(null);
+ const anthropic=props.account?props.account.kind===ANTHROPIC_KIND:start?.provider===ANTHROPIC_KIND;
+ const change=(provider:string,name:string)=>setStart({provider,name});
+ if(anthropic)return <AnthropicAccountForm {...props} start={start??undefined} onKindChange={change}/>;
+ return <OpenAiAccountForm key={start?.provider??'default'} {...props} start={start??undefined} onKindChange={change}/>;
+}
+
+function OpenAiAccountForm({account,onSave,onRefresh,onCancel,busy,start,onKindChange}:FormProps&{start?:Start;onKindChange:(provider:string,name:string)=>void}){
  const {formProps,markClean}=useDirtyForm('provider-account');
- const [id,setId]=useState(account?.id||''),[name,setName]=useState(account?.name||''),[url,setUrl]=useState(account?.base_url||providers[0].url),[secret,setSecret]=useState(''),[showSecret,setShowSecret]=useState(false),[capabilities,setCapabilities]=useState<string[]>(account?.capabilities||['shell','functions']);
+ const begin=providers.find(row=>row.id===start?.provider)??providers[0];
+ const [id,setId]=useState(account?.id||''),[name,setName]=useState(account?.name||start?.name||''),[url,setUrl]=useState(account?.base_url||begin.url),[secret,setSecret]=useState(''),[showSecret,setShowSecret]=useState(false),[capabilities,setCapabilities]=useState<string[]>(account?.capabilities||startCapabilities(start?.provider));
  const [included,setIncluded]=useState(()=>modelList(account?.model||'')),[overrides,setOverrides]=useState<ModelOverrides>(account?.model_overrides||{});
  const [wire,setWire]=useState<'responses'|'chat'>(account?.wire==='chat'?'chat':'responses');
  const [maxOutput,setMaxOutput]=useState(String(account?.limits?.max_output_tokens??'')),[requestTimeout,setRequestTimeout]=useState(String(account?.limits?.request_timeout_s??''));
- const [provider,setProvider]=useState(providerFor(account?.base_url||providers[0].url)),[saving,setSaving]=useState(false),[error,setError]=useState(''),[errors,setErrors]=useState<Errors>({});
+ const [provider,setProvider]=useState(account?providerFor(account.base_url):begin.id),[saving,setSaving]=useState(false),[error,setError]=useState(''),[errors,setErrors]=useState<Errors>({});
  const pending=useRef(false),generatedId=useRef('');
  const disabled=busy||saving;
  const catalog=account?.model_catalog||{};
  const clearError=(field:keyof Errors)=>setErrors(prior=>({...prior,[field]:undefined}));
- function chooseProvider(value:string){const selected=providers.find(row=>row.id===value)!;setProvider(value);setUrl(selected.url);setSecret('');if(value==='kie')setCapabilities(['image','video']);else if(value==='openrouter')setCapabilities(['shell','functions','image','video']);else if(provider==='kie')setCapabilities(['shell','functions']);clearError('base_url')}
+ function chooseProvider(value:string){if(value===ANTHROPIC_KIND){onKindChange(value,name);return}const selected=providers.find(row=>row.id===value)!;setProvider(value);setUrl(selected.url);setSecret('');if(value==='kie')setCapabilities(['image','video']);else if(value==='openrouter')setCapabilities(['shell','functions','image','video']);else if(provider==='kie')setCapabilities(['shell','functions']);clearError('base_url')}
  function include(model:string,checked:boolean){
   const known=[...new Set([...Object.keys(catalog),...included])],current=included.length?included:known;
   const next=checked?[...new Set([...current,model])]:current.filter(item=>item!==model);

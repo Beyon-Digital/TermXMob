@@ -1,3 +1,4 @@
+@layer legacy {
 /* Query grid, filter chips, combine, summarize, Show SQL and the floating SQL editor. Shared tokens only. */
 .data-popover-title{margin:0;font-size:16px;line-height:24px;font-weight:600}
 .data-popover-subtitle{margin:0;font-size:14px;line-height:20px;font-weight:500;color:var(--text-2)}
@@ -190,3 +191,4 @@
 .data-saved-query-list .data-nav-row[aria-current=true]{background:var(--surface-2);font-weight:500}
 .data-run-hint{margin-right:auto;align-self:center}
 @media (max-width:639px){.data-advanced-panel{resize:none;min-width:0}}
+}

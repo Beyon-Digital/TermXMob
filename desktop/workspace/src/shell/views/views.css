@@ -1,0 +1,140 @@
+/* Side bar view content: sections, headings, 36px rows, empty states. Tokens only. One primary button per view. */
+@layer shell {
+  .agents-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .view-section {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-8) var(--space-12);
+    border-bottom: 1px solid var(--border);
+  }
+  .view-section-first {
+    padding-top: var(--space-12);
+  }
+  .view-primary {
+    width: 100%;
+  }
+  .view-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    margin: 0;
+    color: var(--text-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    line-height: var(--line-xs);
+  }
+  .view-count {
+    margin-left: auto;
+    color: var(--text-2);
+    font-weight: 500;
+  }
+  .view-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .view-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    width: 100%;
+    min-height: var(--row);
+    padding: 0 var(--space-8);
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .view-row:hover,
+  .view-row[data-selected] {
+    background: var(--surface-2);
+  }
+  .view-row:focus-visible,
+  .view-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .view-row-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .main-agent-row[data-selected] .view-row-title {
+    font-weight: 500;
+  }
+  .view-row-meta {
+    flex: none;
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+  .view-empty {
+    margin: 0;
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+  .view-empty-padded {
+    padding: var(--space-16);
+  }
+  .view-link {
+    align-self: flex-start;
+  }
+  .needs-row {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-4) var(--space-8);
+  }
+  .needs-title {
+    overflow-wrap: anywhere;
+  }
+  .needs-row small {
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+  .agent-sprite {
+    display: inline-flex;
+    flex: none;
+    width: var(--space-24);
+    height: var(--space-24);
+  }
+
+  /* The conversation list is virtualized, so its container needs a height of its own. */
+  .agents-chats {
+    flex: 1;
+    min-height: 200px;
+    padding: var(--space-8) 0 0;
+    border-bottom: 0;
+  }
+  .ide-shell .agents-chats .sidebar-scroll {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .ide-shell .agents-chats .sidebar-section-heading {
+    padding: 0 var(--space-12);
+  }
+
+  .data-sidebar-host,
+  .studio-sidebar-context {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}

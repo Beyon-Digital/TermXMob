@@ -1,0 +1,122 @@
+/* One file in the tab layout: a slim bar (path, save, actions) over the CodeMirror host. Tokens only. The text area itself is
+   themed in editor-theme.ts. */
+@layer surfaces {
+  .file-tab {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .file-tab-bar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-8);
+    height: var(--space-32);
+    padding-right: var(--space-8);
+    border-bottom: 1px solid var(--border);
+  }
+  .file-tab-bar .editor-breadcrumbs {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0 var(--space-16);
+    border-bottom: 0;
+  }
+  .file-tab-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .file-tab-actions .button-icon {
+    width: var(--ide-action);
+    height: var(--ide-action);
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+  }
+  .file-tab-actions .button-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  .file-tab-host {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .file-tab-host .cm-editor {
+    height: 100%;
+  }
+  .file-tab-output {
+    position: relative;
+    max-height: 180px;
+    overflow: auto;
+    padding: var(--space-12) var(--space-16);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .file-tab-output .button {
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-8);
+  }
+  .file-tab-output pre {
+    margin: 0;
+    padding-right: var(--space-32);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+    white-space: pre-wrap;
+  }
+
+  /* Problems, Preview and Run and debug in the bottom panel. */
+  .panel-pane,
+  .problems-pane {
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .problems-pane {
+    padding: var(--space-4) 0;
+  }
+  .problems-pane > p {
+    margin: 0;
+    padding: var(--space-12) var(--space-16);
+    color: var(--text-2);
+  }
+  .problem-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-12);
+    width: 100%;
+    min-height: var(--ide-row-h);
+    padding: 0 var(--space-16);
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .problem-row:hover {
+    background: var(--surface-2);
+  }
+  .problem-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .problem-row small {
+    flex: none;
+    margin-left: auto;
+    color: var(--text-3);
+    font-size: var(--text-xs);
+  }
+}

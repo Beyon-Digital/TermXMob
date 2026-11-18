@@ -61,7 +61,7 @@ def run(destination):
         state.agent.save_provider(provider_id='voice-fixture',kind='openai-compatible',name='Local audio fixture',base_url=f'http://127.0.0.1:{provider.server_port}/v1',model='fixture-chat',capabilities=['audio'],api_key='fixture-not-a-real-provider-key')
         assert 'audio' in state.agent_store.get_provider('voice-fixture')['capabilities'];assert not report['provider_requests']
         from workspace_ui_snapshot import snapshot_ui
-        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist')))))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True))
         report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         session=state.workspace.create_session(owner,title='Voice chat proof',project_id=project['id'],cwd=str(root),mode='ask',provider_id='voice-fixture',model='fixture-chat')
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]

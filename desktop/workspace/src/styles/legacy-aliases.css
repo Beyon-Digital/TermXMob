@@ -1,0 +1,80 @@
+/* TEMPORARY. Maps the retired variable names to the tokens in tokens.css so the
+   existing component CSS keeps rendering while each file is migrated to tokens.
+   Delete a line when `rg 'var\(--name' src` stops matching. Still referenced by the legacy layer CSS, which the
+   classic layout and the older surfaces share; the file goes with the last of those migrations.
+   Values here are references only: no colours, no new sizes. */
+:root {
+  /* colour: shadcn-era names */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --secondary: var(--text-2);
+  --muted: var(--surface-2);
+  --accent-soft: var(--surface-2);
+  --accent-foreground: var(--accent-fg);
+  --destructive: var(--danger);
+  --surface-raised: var(--surface);
+  --border-subtle: var(--border);
+  --warning: var(--text-2);       /* DESIGN.md has no warning colour: neutral until restyled */
+  --warning-soft: var(--surface-2);
+
+  /* surfaces of the current chat-first frame */
+  --sidebar: var(--bg);
+  --agent-frame-bg: var(--bg);
+  --agent-canvas-bg: var(--bg);
+  --agent-sidebar-bg: var(--bg);
+  --agent-composer-bg: var(--surface);
+  --agent-user-bg: var(--surface-2);
+  --agent-link: var(--accent);
+  --agent-scrim: var(--scrim);
+  --agent-shadow-overlay: var(--shadow-overlay);
+
+  /* focus: accent ring, drawn inside clipped containers */
+  --agent-focus: var(--accent);
+  --control-focus-ring: 2px solid var(--agent-focus);
+  --control-focus-offset: -2px;
+
+  /* shape */
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --agent-radius: var(--radius);
+  --agent-radius-lg: var(--radius-lg);
+  --agent-canvas-radius: var(--radius-lg);
+
+  /* spacing */
+  --agent-space-4: var(--space-4);
+  --agent-space-8: var(--space-8);
+  --agent-space-12: var(--space-12);
+  --agent-space-16: var(--space-16);
+  --agent-space-24: var(--space-24);
+  --agent-space-32: var(--space-32);
+
+  /* type */
+  --agent-text-xs: var(--text-xs);
+  --agent-text-sm: var(--text-sm);
+  --agent-text-base: var(--text-base);
+  --agent-text-lg: var(--text-lg);
+  --agent-text-xl: var(--text-xl);
+  --agent-text-2xl: var(--text-2xl);
+  --agent-line-xs: var(--line-xs);
+  --agent-line-sm: var(--line-sm);
+  --agent-line-base: var(--line-base);
+  --agent-line-lg: var(--line-lg);
+  --agent-line-xl: var(--line-xl);
+  --agent-line-2xl: var(--line-2xl);
+
+  /* controls and layout */
+  --agent-control-height: var(--control-compact);
+  --agent-control-default: var(--control);
+  --agent-touch-height: var(--control-touch);
+  --agent-header-height: var(--header-height);
+  --agent-sidebar-row-height: var(--row);
+  --agent-rail-width: 52px;       /* replaced by the 48px activity bar in U4 */
+  --agent-reading-width: var(--reading-width);
+  --agent-content-width: var(--content-width);
+
+  /* motion */
+  --motion-fast: var(--duration-fast);
+  --motion-standard: var(--duration-base);
+  --motion-exit: var(--duration-fast);
+  --motion-ease: var(--ease-out);
+}

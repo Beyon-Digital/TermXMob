@@ -1,8 +1,10 @@
 import './lib/random-uuid';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import '@fontsource-variable/geist';
-import '@fontsource-variable/geist-mono';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/jetbrains-mono';
+import './styles/tokens.css';
+import './styles/legacy-aliases.css';
 import './styles.css';
 import './workspace-motion.css';
 import App from './App';

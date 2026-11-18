@@ -35,7 +35,7 @@ def run(destination):
         adapter=Adapter();state=AppState(passcode=None,credentials=CredentialStore(memory={}),adapter_factory=lambda *_:adapter)
         owner=state.identity.setup_owner('queue-owner','queue-proof-password-123');project=state.projects.register(str(project_root),name='Queue proof')
         state.agent.save_provider(provider_id='fixture',kind='openai-compatible',name='No network fixture',base_url='http://127.0.0.1:9999/v1',model='fixture',capabilities=['shell'],api_key='not-a-provider-key')
-        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist')))))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True))
         session=state.workspace.create_session(owner,title='Durable queue proof',project_id=project['id'],cwd=str(project_root),provider_id='fixture',model='fixture',mode='ask')
         report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         for i in range(80):

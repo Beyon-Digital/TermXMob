@@ -385,6 +385,54 @@ def search_config(ctx: ToolContext | None = None) -> SearchConfig | None:
     return SearchConfig(backend, base_url, key) if backend and key else None
 
 
+def _search_backend() -> tuple[str, SearchBackend | None]:
+    name = (os.environ.get("TERMX_WEB_SEARCH_PROVIDER") or "brave").strip().lower()
+    return name, BACKENDS.get(name)
+
+
+def search_status(store: CredentialStore) -> dict[str, Any]:
+    """What the settings page shows: whether `web_search` is offered and where its key comes from. Never the key."""
+    name, backend = _search_backend()
+    error: str | None = None
+    source: str | None = None
+    try:
+        source = store.source(WEB_SEARCH_CREDENTIAL)
+    except RuntimeError as exc:
+        error = str(exc)
+    custom_url = (os.environ.get("TERMX_WEB_SEARCH_URL") or "").strip()
+    if backend is None:
+        error = error or f"The search provider '{name}' is not supported. Use brave."
+    return {
+        "available": backend is not None and source is not None,
+        "provider": name,
+        "source": source,
+        "store_available": store.available(),
+        "custom_endpoint": bool(custom_url),
+        "error": error,
+    }
+
+
+def reset_search_cache() -> None:
+    """Forget the cached availability so the next `web_search` check sees a key that was just saved or removed."""
+    global _ready
+    _ready = None
+
+
+def set_search_key(store: CredentialStore, key: str) -> None:
+    key = (key or "").strip()
+    if not key:
+        raise ValueError("Enter the search API key.")
+    if len(key) > 512 or not key.isprintable() or any(ch.isspace() for ch in key):
+        raise ValueError("The key cannot contain spaces or line breaks. Paste it again without them.")
+    store.set(WEB_SEARCH_CREDENTIAL, key)
+    reset_search_cache()
+
+
+def clear_search_key(store: CredentialStore) -> None:
+    store.delete(WEB_SEARCH_CREDENTIAL)
+    reset_search_cache()
+
+
 def search_available() -> bool:
     """Whether web_search is offered. Cached briefly: a credential-store lookup can start a process."""
     global _ready

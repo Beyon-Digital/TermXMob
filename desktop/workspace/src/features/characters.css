@@ -1,3 +1,4 @@
+@layer legacy {
 .characters-page {
   box-sizing: border-box;
   display: grid;
@@ -149,7 +150,6 @@
   align-items: center;
   justify-content: flex-end;
   padding: 12px;
-  background: radial-gradient(ellipse at center, var(--accent-soft) 0, transparent 68%);
   border-bottom: 1px solid var(--border);
 }
 
@@ -402,4 +402,5 @@
   .characters-page {
     padding: 16px;
   }
+}
 }

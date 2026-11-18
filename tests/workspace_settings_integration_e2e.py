@@ -69,7 +69,7 @@ def run(destination):
         state = AppState(passcode=None, credentials=CredentialStore(memory={}),
                          adapter_factory=lambda *_: inference)
         owner = state.identity.setup_owner('settings-proof', 'synthetic-settings-password-2026')
-        ui = snapshot_ui(root, Path(os.environ.get('TERMX_UI_PROOF_DIST', str(Path(__file__).resolve().parents[1] / 'desktop/workspace/dist'))))
+        ui = snapshot_ui(root, Path(os.environ.get('TERMX_UI_PROOF_DIST', str(Path(__file__).resolve().parents[1] / 'desktop/workspace/dist'))),classic=True)
         report['ui_sha256'] = json.loads((root / 'fixture-ui-snapshot.json').read_text())
         app = create_app(state, web_dir=ui)
         projects = []

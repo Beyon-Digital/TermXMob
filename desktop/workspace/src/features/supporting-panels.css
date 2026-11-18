@@ -1,3 +1,4 @@
+@layer legacy {
 /* Supporting Agent dialogs use the same neutral controls as the native settings sheet. */
 html[data-app-workspace="agent"] :is(.session-settings-dialog, .fork-context-dialog, .task-supervisor-dialog) {
   background: var(--surface);
@@ -161,4 +162,5 @@ html[data-app-workspace="agent"] .supervision-detail > .supervision-cancel { col
 @media (pointer: coarse) {
   html[data-app-workspace="agent"] :is(.session-settings-dialog, .fork-context-dialog, .task-supervisor-dialog) :is(button, select, input:not([type="checkbox"]):not([type="radio"]), summary) { min-height: 44px; }
   html[data-app-workspace="agent"] .context-turn-choice { min-height: 44px; }
+}
 }

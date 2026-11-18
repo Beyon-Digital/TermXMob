@@ -3,20 +3,22 @@ export const settingsGroups=['Preferences','Workers','Host'] as const;
 export const settingsCategories = [
  {id:'preferences',label:'General',group:'Preferences',description:'Your account, appearance and keyboard shortcuts.'},
  {id:'characters',label:'Characters',group:'Preferences',description:'Choose your agent’s character.'},
- {id:'models',label:'Models & engines',group:'Workers',description:'Connect providers, choose which model each role uses and manage engines.'},
+ {id:'models',label:'Models & engines',group:'Workers',description:'Connect providers such as OpenAI and Anthropic (Claude), choose which model each role uses and manage engines.',keywords:'anthropic claude api key messages opus sonnet haiku fable unpriced cost openai openrouter provider account model'},
  {id:'voice',label:'Voice',group:'Workers',description:'Dictate to your agents and hear their replies.'},
  {id:'cloud',label:'Cloud accounts',group:'Workers',description:'Connect accounts used by your agents.'},
  {id:'agents',label:'Agents',group:'Workers',description:'Manage how your agents run.'},
  {id:'bots',label:'Bots',group:'Workers',description:'Background agents that work for you inside limits you set.'},
  {id:'extensions',label:'Plugins & skills',group:'Workers',description:'Add skills and plugins to your agents.'},
- {id:'connections',label:'Tools & connections',group:'Workers',description:'Connect the tools your agents use.'},
- {id:'memory',label:'Memory',group:'Host',description:'Control what your agents remember.'},
+ {id:'connections',label:'Tools & connections',group:'Workers',description:'Connect the tools your agents use, including web search.',keywords:'web search brave api key websites approval mcp desktop control'},
+ {id:'memory',label:'Memory',group:'Host',description:'Control what your agents remember.',keywords:'notes recall search ranking'},
  {id:'hooks',label:'Hooks',group:'Host',description:'Run actions when agent events occur.'},
  {id:'automations',label:'Automations',group:'Host',description:'Schedule work on this host.'},
  {id:'runners',label:'Runners',group:'Host',description:'Choose where your agents run.'},
- {id:'access',label:'Access & sessions',group:'Host',description:'Manage access to this host.'},
+ {id:'access',label:'Access & sessions',group:'Host',description:'Manage access to this host and keep it running while you are away.',keywords:'always on keep awake sleep terminals holder survive restart background service heartbeat health tls pair device'},
  {id:'safety',label:'Safety & auto review',group:'Host',description:'Control approvals and agent permissions.'},
 ] as const;
+/** What the category search matches: the name, the description and words for the settings inside the page. */
+export function settingsSearchText(row:(typeof settingsCategories)[number]){return [row.label,row.id,row.description,'keywords' in row?row.keywords:''].join(' ').toLocaleLowerCase()}
 const aliases:Record<string,string>={general:'preferences',appearance:'preferences',shortcuts:'preferences',plugins:'extensions',skills:'extensions',engines:'models',schedules:'automations',goals:'automations',sessions:'access',mcp:'connections'};
 export function canonicalSettingsCategory(value:string){return aliases[value]||value||'preferences'}
 export function isSettingsCategory(value:string){return !!value&&settingsCategories.some(row=>row.id===canonicalSettingsCategory(value))}

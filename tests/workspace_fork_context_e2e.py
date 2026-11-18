@@ -35,7 +35,7 @@ def run(destination):
         descriptor=adapter.descriptor().as_dict();descriptor['capabilities']=adapter.capabilities().as_dict()
         state.engines.catalogue.entries['fixture-transfer']={'descriptor':descriptor,'configuration':{'models':['fixture-target']},'refreshed_at':1,'stale':False,'refresh_error':None}
         state.agent_store.put_provider('fixture',kind='openai-compatible',name='No-query fixture account',base_url='http://127.0.0.1:1/v1',model='fixture-source',capabilities=['chat'],secret_configured=False)
-        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist')))))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True))
         session=state.workspace.create_session(owner,title='Original fork context',project_id=project['id'],cwd=str(folder),provider_id='fixture',model='fixture-source',mode='ask')
         for prompt,result in [('Selected message','Selected answer'),('Excluded message','Excluded answer')]:
             task=state.agent_store.create_task(prompt=prompt,cwd=str(folder),provider_id='fixture',model='fixture-source',limits={},mode='ask')

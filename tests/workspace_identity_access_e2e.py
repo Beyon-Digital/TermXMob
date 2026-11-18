@@ -31,7 +31,7 @@ def run(destination):
         state.identity.register_adapter(adapter)
         for name in ('Allowed project','Unrelated project'):(root/name).mkdir()
         project=state.projects.register(str(root/'Allowed project'),name='Allowed project');other=state.projects.register(str(root/'Unrelated project'),name='Unrelated project')
-        assets=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))))
+        assets=snapshot_ui(root,Path(os.environ.get('TERMX_UI_PROOF_DIST',str(Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))),classic=True)
         report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text());app=create_app(state,web_dir=assets)
         conversation=state.workspace.create_session(owner,title='Access proof',project_id=project['id'],cwd=project['path'])
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]

@@ -1,4 +1,5 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import {pinClassicShell} from './test-utils/classic-shell';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import App from './App';
 import {type Session} from './lib/api';
@@ -29,7 +30,7 @@ function chat(id:string):Session{return {id,title:id,engine:'internal',mode:'age
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done});return {promise,resolve};}
 
 beforeEach(()=>{
- localStorage.clear();sessionStorage.clear();history.replaceState(null,'','/');
+ localStorage.clear();pinClassicShell();sessionStorage.clear();history.replaceState(null,'','/');
  vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}));
  mocks.read.mockImplementation(async(id:string)=>chat(id));
  mocks.ensure.mockResolvedValue({session:chat('main')});

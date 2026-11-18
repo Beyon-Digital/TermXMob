@@ -1,3 +1,4 @@
+@layer legacy {
 .workspace-tabbed{position:relative;isolation:isolate}
 .workspace-tabbed .dock-pane-header{height:34px;min-height:34px;padding:0 5px;gap:1px;overflow:visible;flex-shrink:0}
 .dock-tab-strip{display:flex;align-items:stretch;flex:1;min-width:0;height:100%;overflow:auto;scrollbar-width:none;gap:0}
@@ -48,3 +49,4 @@
 @media(max-width:640px){.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-pane-header{padding-inline:var(--agent-space-4,4px);gap:0}.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-tab-strip>button{padding-inline:var(--agent-space-8,8px)}.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-floating-chat{bottom:var(--agent-space-8,8px);width:calc(100% - 16px)}}
 @media(pointer:coarse){.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-pane-header,.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-floating-chat>.dock-pane-header{height:56px;min-height:56px}.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-tab-strip>button,.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-pane-header>.button{min-height:var(--agent-touch-height,44px);min-width:var(--agent-touch-height,44px)}}
 @media(prefers-reduced-motion:reduce){.workspace-shell[data-workspace=agent] .workspace-tabbed .dock-pane-header>.button{transition:none}}
+}

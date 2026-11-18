@@ -4,7 +4,7 @@ python tests/workspace_settings_tls_e2e.py OUTPUT_DIR
 Uses an installed Chromium; never bypasses TLS, installs a CA, or contacts AI.
 """
 from __future__ import annotations
-import json, os, shutil, socket, sys, tempfile, threading
+import json, os, re, shutil, socket, sys, tempfile, threading
 from pathlib import Path
 from time import monotonic,sleep
 import uvicorn
@@ -39,18 +39,22 @@ def run(destination):
                 page.on('pageerror',lambda error:report['errors'].append(str(error)))
                 page.goto(f'http://127.0.0.1:{port}/')
                 page.get_by_label('Username',exact=True).fill('settings-fixture');page.get_by_label('Password',exact=True).fill('settings-fixture-password-123');page.get_by_role('button',name='Continue with password').click()
-                page.get_by_role('button',name='Settings',exact=True).wait_for(timeout=20000)
-                sidebar=page.get_by_role('complementary',name='Chats and agents',exact=True)
-                workspace_nav=page.get_by_role('navigation',name='Workspace navigation',exact=True)
-                # One persistent Settings entry lives in the activity rail.
-                opener=workspace_nav.get_by_role('button',name='Settings',exact=True)
+                # The IDE layout is the default: Settings is a tab, opened from the activity bar.
+                page.get_by_role('tablist',name='Editor group 1 tabs').wait_for(timeout=60000)
+                sidebar=page.get_by_role('complementary',name='Agents',exact=True)
+                activity_bar=page.get_by_role('toolbar',name='Activity bar',exact=True)
+                # One persistent Settings entry lives in the activity bar.
+                opener=activity_bar.get_by_role('button',name='Settings',exact=True)
                 assert opener.count()==1
+                assert page.get_by_role('region',name='conversation panel').count()==0,'the classic dock is not the default'
                 assert sidebar.get_by_role('button',name='Settings',exact=True).count()==0
                 assert sidebar.get_by_role('button',name='Access & sessions',exact=True).count()==0
                 assert sidebar.get_by_role('button',name='Main agent').count()==1
                 page.screenshot(path=str(output/'drawer-desktop.png'))
                 opener.click()
-                dialog=page.get_by_role('dialog',name='Settings',exact=True);dialog.wait_for()
+                settings_tab=page.get_by_role('tab',name=re.compile(r'^Settings'))
+                expect(settings_tab).to_have_attribute('aria-selected','true')
+                dialog=page.get_by_role('region',name='Settings',exact=True);dialog.wait_for()
                 categories=['General','Characters','Models & engines','Voice','Cloud accounts','Agents','Bots','Plugins & skills','Tools & connections','Memory','Hooks','Automations','Runners','Access & sessions','Safety & auto review']
                 nav=dialog.get_by_role('navigation',name='Settings categories')
                 mobile_category=dialog.get_by_role('combobox',name='Settings category',exact=True)
@@ -64,7 +68,6 @@ def run(destination):
                 # LAN HTTPS sits in the collapsed "Host connectivity" disclosure, and the port in its "Network settings" disclosure.
                 dialog.get_by_text('Host connectivity',exact=True).click();dialog.get_by_role('heading',name='Local network HTTPS',exact=True).wait_for()
                 dialog.get_by_text('Network settings',exact=True).click()
-                assert page.url.endswith('/manage/access')
                 # Stage and undo configuration on a throwaway profile. The proof
                 # never restarts or exposes a LAN listener or opens firewall rules.
                 dialog.get_by_label('HTTPS port',exact=True).fill('8899');dialog.get_by_role('button',name='Save LAN HTTPS settings',exact=True).click();dialog.get_by_text('Saved. Restart the host to apply LAN exposure changes. No trust root was installed.',exact=True).wait_for()
@@ -88,11 +91,11 @@ def run(destination):
                             expect(mobile_category).to_be_visible();expect(mobile_category).to_have_value('memory')
                             assert mobile_category.get_by_role('option').count()==len(categories)
                             assert category_layout['height']>=44 and category_layout['scroll']<=category_layout['width']
-                        # Focus remains inside the modal across forward/backward tab cycles.
+                        # A tab is not a modal: focus moves through real controls and is never lost to the page body.
                         for key in ['Tab','Shift+Tab']*8:
-                            page.keyboard.press(key);assert dialog.evaluate('(node)=>node.contains(document.activeElement)')
+                            page.keyboard.press(key);assert page.evaluate('document.activeElement!==document.body')
                         page.screenshot(path=str(output/f'settings-{width}-{theme}.png'))
-                        report['viewports'].append({'width':width,'height':height,'theme':theme,'bounds':bounds,'category_layout':category_layout,'page_overflow':False,'focus_trapped':True})
+                        report['viewports'].append({'width':width,'height':height,'theme':theme,'bounds':bounds,'category_layout':category_layout,'page_overflow':False,'focus_kept':True})
                 page.set_viewport_size({'width':1440,'height':1000})
                 nav.get_by_role('link',name='Memory',exact=True).click();dialog.get_by_role('button',name='Edit memory',exact=True).click()
                 form=dialog.get_by_role('form',name='Edit memory');form.get_by_label('Fact or decision').fill('Keep this unsaved security decision')
@@ -100,7 +103,9 @@ def run(destination):
                 discard_prompt=page.get_by_role('dialog',name='Discard unsaved changes?',exact=True)
                 expect(dialog.get_by_role('status').filter(has_text='Unsaved changes')).to_be_visible()
                 nav.get_by_role('link',name='Hooks',exact=True).click();discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Keep editing',exact=True).click();expect(discard_prompt).to_be_hidden();assert form.get_by_label('Fact or decision').input_value()=='Keep this unsaved security decision'
-                page.keyboard.press('Escape');discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Keep editing',exact=True).click();expect(discard_prompt).to_be_hidden();assert dialog.is_visible()
+                # Closing the Settings tab with unsaved edits asks first, and keeping them leaves the tab and the draft.
+                settings_tab.locator('.tab-close').click();discard_prompt.wait_for();discard_prompt.get_by_role('button',name='Keep editing',exact=True).click();expect(discard_prompt).to_be_hidden();assert dialog.is_visible()
+                assert form.get_by_label('Fact or decision').input_value()=='Keep this unsaved security decision'
                 form.get_by_role('button',name='Save memory changes',exact=True).click();dialog.get_by_text('Memory updated',exact=True).wait_for()
                 assert state.workspace.store.get('memory',memory['id'])['content']=='Keep this unsaved security decision'
                 dialog.get_by_role('button',name='Delete',exact=True).click();review=page.get_by_role('dialog',name='Delete?',exact=True);review.wait_for();review.get_by_role('button',name='Cancel',exact=True).click();assert state.workspace.store.get('memory',memory['id'])
@@ -123,12 +128,16 @@ def run(destination):
                 axe=Path(__file__).resolve().parents[1]/'desktop/workspace/node_modules/axe-core/axe.min.js'
                 page.add_script_tag(path=str(axe))
                 for width in [1440,390]:
-                    page.set_viewport_size({'width':width,'height':900});result=page.evaluate('async()=>{const result=await axe.run(document.querySelector(".settings-surface"),{runOnly:{type:"tag",values:["wcag2a","wcag2aa","wcag21aa"]}});return result.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))}')
+                    page.set_viewport_size({'width':width,'height':900});result=page.evaluate('async()=>{const result=await axe.run(document.querySelector(".settings-surface-page"),{runOnly:{type:"tag",values:["wcag2a","wcag2aa","wcag21aa"]}});return result.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))}')
                     report['axe'].append({'width':width,'violations':result});assert not result,result
-                page.set_viewport_size({'width':1440,'height':1000});dialog.get_by_role('button',name='Close',exact=True).click()
+                page.set_viewport_size({'width':1440,'height':1000});settings_tab.locator('.tab-close').click()
                 expect(dialog).to_be_hidden()
-                expect(opener).to_be_focused()
-                report['checks'] += ['one sticky Settings entry; no drawer category duplication',f'all {len(categories)} categories reachable, including Characters','memory edit/save and draft guards','destructive cancellation leaves record intact','Escape close and focus return','focus trap at all tested widths','shareable manager routes']
+                expect(settings_tab).to_have_count(0)
+                # A shareable manager route still lands on its page: /manage/access opens the Settings tab on that category.
+                page.goto(f'http://127.0.0.1:{port}/manage/access')
+                page.get_by_role('tab',name='Settings',exact=True).wait_for(timeout=60000)
+                expect(page.get_by_role('navigation',name='Settings categories').get_by_role('link',name='Access & sessions',exact=True)).to_have_attribute('aria-current','page')
+                report['checks'] += ['one sticky Settings entry; no drawer category duplication',f'all {len(categories)} categories reachable, including Characters','memory edit/save and draft guards','destructive cancellation leaves record intact','closing the Settings tab with unsaved edits asks first','focus never lost to the page body at all tested widths','a /manage/access deep link opens the Settings tab on its category']
                 assert not report['errors'],report['errors']
                 browser.close()
         finally:

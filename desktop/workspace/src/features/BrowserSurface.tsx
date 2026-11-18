@@ -3,10 +3,12 @@ import {BrowserAnnotationEditor,type BrowserAnnotation,type BrowserElement} from
 import BrowserSkillEditor,{type BrowserDraft} from './BrowserSkillEditor';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Button} from '../components/ui/button';
-import {Plus,X,SlidersHorizontal,Keyboard} from 'lucide-react';
+import {Plus,X,SlidersHorizontal,Keyboard,BookmarkPlus} from 'lucide-react';
 import './browser-surface.css';
+import './browser-tab.css';
 import {Input} from '../components/ui/input';
 import {request} from '../lib/api';
+import {setBrowserTabTitle} from '../lib/browser-tab-titles';
 import './browser.css';
 import {BrowserApprovalPreview,type HumanBrowserPreview} from './BrowserApprovalPreview';
 
@@ -17,12 +19,16 @@ type Context={tab_id:string;url:string;title:string;elements:Element[];annotatio
 type Review={human_preview?:HumanBrowserPreview;id:string;status:string;decision:string;reason:string;target:string;effect:string;tool_id:string;run_id:string;grant_id?:string;expires_at:number};
 type Annotation=BrowserAnnotation;
 type Download={id:string;filename:string;size:number;approved:boolean};
-export type BrowserSurfaceProps={visible?:boolean;locked?:boolean;projectId?:string|null;taskId?:string|null;onContext?:(context:unknown)=>void};
+export type BrowserSurfaceProps={visible?:boolean;locked?:boolean;projectId?:string|null;taskId?:string|null;onContext?:(context:unknown)=>void;
+ /** Single-tab mode (a browser tab of the IDE layout): show only this built-in tab, with no tab strip of its own. */
+ tabId?:string;
+ /** Single-tab mode: the page was closed or never existed, and the layout tab can go. */
+ onClose?:()=>void};
 const post=(body:unknown):RequestInit=>({method:'POST',body:JSON.stringify(body)});
 
-export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=true}:BrowserSurfaceProps){
+export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=true,tabId,onClose}:BrowserSurfaceProps){
  const active=useObservationActive(visible&&!locked),activeNow=useRef(active);activeNow.current=active;
- const [profiles,setProfiles]=useState<Profile[]>([]),[tabs,setTabs]=useState<Tab[]>([]),[selected,setSelected]=useState('');
+ const [profiles,setProfiles]=useState<Profile[]>([]),[tabs,setTabs]=useState<Tab[]>([]),[selected,setSelected]=useState(tabId||''),[loadedOnce,setLoadedOnce]=useState(false),[notice,setNotice]=useState('');
  const [url,setUrl]=useState(''),[profileId,setProfileId]=useState(''),[profileName,setProfileName]=useState(''),[showProfile,setShowProfile]=useState(false),[profileEphemeral,setProfileEphemeral]=useState(false);
  const [error,setError]=useState(''),[transportError,setTransportError]=useState(''),[busy,setBusy]=useState(false),[frame,setFrame]=useState(''),[connected,setConnected]=useState(false);
  const [context,setContext]=useState<Context|null>(null),[showContext,setShowContext]=useState(false),[grantOpen,setGrantOpen]=useState(false);
@@ -37,14 +43,18 @@ export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=
  const [observationPaused,setObservationPaused]=useState(()=>locked||sessionStorage.getItem('termx-browser-view-paused')==='true');const observationBlocked=useRef(locked||sessionStorage.getItem('termx-browser-view-paused')==='true');
  const [connectionAttempt,setConnectionAttempt]=useState(0),[controlAllowed,setControlAllowed]=useState(true),[viewConnecting,setViewConnecting]=useState(false);
  const tab=tabs.find(t=>t.id===selected),profile=profiles.find(p=>p.id===tab?.profile_id);
- const activeTabs=tabs.filter(t=>t.project_id===(projectId||'') && !['closed','crashed'].includes(t.state));
+ useEffect(()=>{if(tabId)setBrowserTabTitle(tabId,tab?.title||'')},[tabId,tab?.title]);
+ const scoped=(t:Tab)=>tabId?t.id===tabId:t.project_id===(projectId||'');
+ const activeTabs=tabs.filter(t=>scoped(t) && !['closed','crashed'].includes(t.state));
+ const gone=!!tabId&&loadedOnce&&(!tab||tab.state==='closed');
  const load=useCallback(async()=>{
   const scope=projectId||'';
   const [p,t,r,d]=await Promise.all([request<Profile[]>('/api/browser/profiles'),request<Tab[]>('/api/browser/tabs'),request<Review[]>('/api/browser/reviews'),request<Download[]>('/api/browser/downloads')]);
   if(activeProject.current!==scope||!activeNow.current)return;
   setProfiles(p);setTabs(t);setReviews(r);setDownloads(d);setProfileId(current=>p.some(x=>x.id===current&&x.project_id===(projectId||''))?current:p.find(x=>x.project_id===(projectId||''))?.id||'');
-  setSelected(current=>t.some(x=>x.id===current&&x.project_id===(projectId||'')&&!['closed','crashed'].includes(x.state))?current:t.find(x=>x.project_id===(projectId||'')&&!['closed','crashed'].includes(x.state))?.id||'');
- },[projectId]);
+  if(tabId)setSelected(tabId);else setSelected(current=>t.some(x=>x.id===current&&x.project_id===(projectId||'')&&!['closed','crashed'].includes(x.state))?current:t.find(x=>x.project_id===(projectId||'')&&!['closed','crashed'].includes(x.state))?.id||'');
+  setLoadedOnce(true);
+ },[projectId,tabId]);
  const run=useCallback(async(job:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await job()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}},[]);
  useEffect(()=>{if(!active)return;let stopped=false,busy=false;const poll=async()=>{if(stopped||busy)return;busy=true;try{await load()}catch(error){if(!stopped)setError(error instanceof Error?error.message:String(error))}finally{busy=false}};void poll();const timer=setInterval(()=>void poll(),5000);return()=>{stopped=true;clearInterval(timer)}},[load,active]);
  useEffect(()=>{setUrl(tab?.state==='private'?'':tab?.url||'');setContext(null);setAnnotations([]);diagnosticEpoch.current++;setDiagnostic(null);setDiagnosticEnabled(false)},[selected,tab?.url,tab?.state,tab?.document_revision]);
@@ -64,9 +74,10 @@ export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=
  const human=(action:string,args:Record<string,unknown>={})=>{if(observationBlocked.current||!activeNow.current)return;if(!controlAllowed){setError('Browser control permission is required. You can still view and share permitted context.');return}if(socket.current?.readyState===WebSocket.OPEN)socket.current.send(JSON.stringify({action,args}));else void run(async()=>{await request(`/api/browser/tabs/${selected}/human`,post({action,args}));await load()})};
  const observe=async()=>{const [value,notes]=await Promise.all([request<Context>(`/api/browser/tabs/${selected}/context`),request<Annotation[]>(`/api/browser/tabs/${selected}/annotations`)]);if(observationBlocked.current||selection.current!==selected)throw new Error('The selected tab changed. Open Page controls again.');setContext(value);setAnnotations(notes);setShowContext(true);return value};
  const createTab=(address?:string)=>run(async()=>{if(!profileId)throw new Error('Create or select a browser profile first.');const value=await request<Tab>('/api/browser/tabs',post({profile_id:profileId,url:address??(url.trim()||'about:blank')}));await load();setSelected(value.id)});
- const closeSelected=()=>run(async()=>{if(!selected)return;await request(`/api/browser/tabs/${selected}`,{method:'DELETE'});await load()});
+ const closeSelected=()=>run(async()=>{if(!selected)return;await request(`/api/browser/tabs/${selected}`,{method:'DELETE'});await load();if(tabId)onClose?.()});
+ const addSite=()=>run(async()=>{if(!tab||!profile)return;const site=await request<{title:string;origin:string}>('/api/browser/sites',post({profile_id:tab.profile_id,url:tab.url,title:tab.title,pinned:true}));setNotice('Saved '+(site.title||site.origin)+' to Sites.')});
  const reopen=()=>run(async()=>{const previous=[...tabs].filter(t=>t.project_id===(projectId||'')&&['closed','crashed'].includes(t.state)&&!t.recovered_tab_id).sort((a,b)=>(b.closed_at||b.created_at||0)-(a.closed_at||a.created_at||0))[0];if(!previous)throw new Error('There is no closed built-in tab to reopen.');const value=await request<Tab>(`/api/browser/tabs/${previous.id}/recover`,post({}));await load();setSelected(value.id)});
- useEffect(()=>{const command=(event:Event)=>{const detail=(event as CustomEvent<{command:string;targetSurface?:string}>).detail;if(!root.current||root.current.getBoundingClientRect().width===0||(!root.current.contains(document.activeElement)&&detail?.targetSurface!=='browser'))return;const value=detail?.command;if(value==='browserNew')void createTab('about:blank');else if(value==='browserClose')void closeSelected();else if(value==='browserReopen')void reopen()};window.addEventListener('termx-browser-command',command);window.dispatchEvent(new CustomEvent('termx-browser-ready'));return()=>window.removeEventListener('termx-browser-command',command)});
+ useEffect(()=>{const command=(event:Event)=>{const detail=(event as CustomEvent<{command:string;targetSurface?:string}>).detail;if(!root.current||root.current.getBoundingClientRect().width===0||(!root.current.contains(document.activeElement)&&detail?.targetSurface!=='browser'))return;const value=detail?.command;if(value==='browserNew')void createTab('about:blank');else if(value==='browserClose')void closeSelected();else if(value==='browserReopen')void reopen()};window.addEventListener('termx-browser-command',command);window.dispatchEvent(new CustomEvent('termx-browser-ready'));const addCurrent=()=>{if(!root.current||root.current.getBoundingClientRect().width===0)return;void addSite()};window.addEventListener('termx-site-add-current',addCurrent);return()=>{window.removeEventListener('termx-browser-command',command);window.removeEventListener('termx-site-add-current',addCurrent)}});
  const handoff=()=>run(async()=>{if(!taskId)throw new Error('Start a chat task before handing over this tab.');await request(`/api/browser/tabs/${selected}/handoff`,post({run_id:taskId,origins:sites.split(/[\n,]/).map(s=>s.trim()).filter(Boolean),actions:['navigate','observe','capture','click','scroll','wait','find','zoom','history',...(editAllowed?['type']:[]),...(uploadsAllowed?['upload','download']:[]),...(diagnosticsAllowed?['diagnostics']:[]),...(lifecycleAllowed?['open_tab','close_tab']:[])],expires_in:Number(expires)}));setGrantOpen(false);await load()});
  const pending=reviews.filter(r=>r.run_id===taskId&&r.status==='needs_user'&&r.expires_at>Date.now()/1000);
  const manualReviews=reviews.filter(review=>review.run_id===taskId&&review.grant_id===tab?.grant_id&&review.status==='blocked'&&review.human_preview?.manual_required).slice(-3);
@@ -77,13 +88,14 @@ export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=
  const uploadFile=(file:File)=>run(async()=>{if(file.size>10*1024*1024)throw new Error('Choose a file smaller than 10 MiB.');const bytes=new Uint8Array(await file.arrayBuffer());let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));const ref=await request(`/api/browser/tabs/${selected}/uploads`,post({filename:file.name,mime_type:file.type||'application/octet-stream',data_base64:btoa(text)}));onContext?.({type:'approved-browser-upload',file:ref,tab_id:selected})});
  return <section ref={root} className="browser-workspace compact-browser" aria-label="Built-in browser workspace">{observationPaused&&<div role="status" className="browser-error">Browser view was paused when the workspace locked. <Button onClick={()=>{sessionStorage.removeItem('termx-browser-view-paused');observationBlocked.current=false;setObservationPaused(false);setConnectionAttempt(value=>value+1)}}>Resume browser view</Button></div>}
   <div className="browser-tabstrip">
-   <div className="browser-tabs" role="tablist" aria-label="Built-in browser tabs">{activeTabs.map((t,index)=><Button key={t.id} id={'browser-tab-'+t.id} role="tab" aria-controls="managed-browser-page" aria-selected={selected===t.id} tabIndex={selected===t.id?0:-1} variant={selected===t.id?'secondary':'ghost'} onClick={()=>setSelected(t.id)} onKeyDown={event=>{const next=event.key==='ArrowRight'?(index+1)%activeTabs.length:event.key==='ArrowLeft'?(index+activeTabs.length-1)%activeTabs.length:event.key==='Home'?0:event.key==='End'?activeTabs.length-1:-1;if(next<0)return;event.preventDefault();setSelected(activeTabs[next].id);document.getElementById('browser-tab-'+activeTabs[next].id)?.focus()}}>{t.title||'New tab'}</Button>)}</div>
-   <Button variant="ghost" size="icon" aria-label="Open built-in tab" title="New tab" onClick={()=>void createTab('about:blank')} disabled={busy||!profileId}><Plus size={15}/></Button>
+   {!tabId&&<div className="browser-tabs" role="tablist" aria-label="Built-in browser tabs">{activeTabs.map((t,index)=><Button key={t.id} id={'browser-tab-'+t.id} role="tab" aria-controls="managed-browser-page" aria-selected={selected===t.id} tabIndex={selected===t.id?0:-1} variant={selected===t.id?'secondary':'ghost'} onClick={()=>setSelected(t.id)} onKeyDown={event=>{const next=event.key==='ArrowRight'?(index+1)%activeTabs.length:event.key==='ArrowLeft'?(index+activeTabs.length-1)%activeTabs.length:event.key==='Home'?0:event.key==='End'?activeTabs.length-1:-1;if(next<0)return;event.preventDefault();setSelected(activeTabs[next].id);document.getElementById('browser-tab-'+activeTabs[next].id)?.focus()}}>{t.title||'New tab'}</Button>)}</div>}
+   {!tabId&&<Button variant="ghost" size="icon" aria-label="Open built-in tab" title="New tab" onClick={()=>void createTab('about:blank')} disabled={busy||!profileId}><Plus size={15}/></Button>}
    <span className="flex-spacer"/>
-   <Button variant="ghost" size="icon" aria-label="Close selected tab" title="Close selected tab" disabled={busy||!tab||!controlAllowed} onClick={()=>void closeSelected()}><X size={14}/></Button>
+   {tab&&/^https?:/.test(tab.url)&&profile&&!profile.ephemeral&&tab.state!=='private'&&<Button variant="ghost" size="icon" aria-label="Add current page to sites" title="Add current page to sites" disabled={busy} onClick={()=>void addSite()}><BookmarkPlus size={16} strokeWidth={1.5} aria-hidden="true"/></Button>}
+   <Button variant="ghost" size="icon" aria-label={tabId?'Close page':'Close selected tab'} title={tabId?'Close page':'Close selected tab'} disabled={busy||!tab||!controlAllowed} onClick={()=>void closeSelected()}><X size={14}/></Button>
    <Button variant="ghost" size="icon" aria-label="Browser tools" title="Browser tools" aria-expanded={showTools} aria-controls="browser-tools" onClick={()=>setShowTools(value=>!value)}><SlidersHorizontal size={15}/></Button>
   </div>
-  {tabs.filter(t=>t.project_id===(projectId||'')&&t.state==='crashed'&&!t.recovered_tab_id).map(t=><div role="alert" className="browser-card" key={t.id}><strong>Browser tab crashed</strong><p>{t.title||'Your tab'} stopped. Reopening creates a new tab in human control; an agent needs a fresh handoff.</p><Button disabled={busy} onClick={()=>void run(async()=>{const value=await request<Tab>(`/api/browser/tabs/${t.id}/recover`,post({}));await load();setSelected(value.id)})}>Reopen crashed tab</Button></div>)}
+  {tabs.filter(t=>scoped(t)&&t.state==='crashed'&&!t.recovered_tab_id).map(t=><div role="alert" className="browser-card" key={t.id}><strong>Browser tab crashed</strong><p>{t.title||'Your tab'} stopped. Reopening creates a new tab in human control; an agent needs a fresh handoff.</p><Button disabled={busy} onClick={()=>void run(async()=>{const value=await request<Tab>(`/api/browser/tabs/${t.id}/recover`,post({}));await load();setSelected(value.id)})}>Reopen crashed tab</Button></div>)}
   {showProfile&&<form className="browser-profile-editor" onSubmit={e=>{e.preventDefault();void run(async()=>{const value=await request<Profile>('/api/browser/profiles',post({project_id:projectId||'',name:profileName,ephemeral:profileEphemeral}));await load();setProfileId(value.id);setProfileName('');setProfileEphemeral(false)})}}>
     <Input aria-label="New profile name" placeholder="New project browser profile" value={profileName} onChange={e=>setProfileName(e.target.value)}/><label className="browser-check"><input type="checkbox" checked={profileEphemeral} onChange={event=>setProfileEphemeral(event.target.checked)}/>Temporary profile · deleted when the host stops or restarts</label><Button type="submit" disabled={busy||!profileName.trim()}>Create profile</Button>
     <Button type="button" variant="ghost" disabled={!profileId||busy} onClick={()=>void run(async()=>{await request(`/api/browser/profiles/${profileId}/clear`,post({}));await load()})}>Clear profile & history</Button>
@@ -102,6 +114,8 @@ export function BrowserSurface({projectId,taskId,onContext,locked=false,visible=
    <Button variant="ghost" disabled={busy||tab.state==='private'} onClick={()=>void run(async()=>{await observe()})}>Ask about page</Button>
    {!taskId&&<span>Start a chat task to hand over this tab.</span>}
   </div>}
+  {notice&&<div className="browser-notice" role="status">{notice}<Button variant="ghost" size="sm" onClick={()=>setNotice('')}>Dismiss</Button></div>}
+  {gone&&<div className="browser-empty" role="status"><h2>This page was closed</h2><p>Open it again from Sites, or close this tab.</p><Button variant="outline" onClick={()=>onClose?.()}>Close tab</Button></div>}
   {(error||transportError)&&<div className="browser-error" role="alert">{error||transportError}<Button variant="ghost" onClick={()=>void run(async()=>{await load();setConnectionAttempt(value=>value+1)})}>Retry</Button></div>}
   {grantOpen&&<div className="browser-grant" role="dialog" aria-label="Task browser handoff">
     <h3>Let this task use the tab</h3><p>{profile?.name} · Task {taskId?.slice(0,8)}. A handoff allows routine actions inside these exact sites. Consequential actions still require you.</p>

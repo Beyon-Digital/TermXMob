@@ -1,0 +1,398 @@
+{
+  "states": [
+    {
+      "label": "sign-in",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "chat",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "focus-visible",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "workbench",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "settings",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "studio",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "data",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "sign-in",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "chat",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "focus-visible",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "workbench",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "settings",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "studio",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "data",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "preference": "system",
+      "dark": false,
+      "overflow": false,
+      "bg": "#FAF9F7",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "sign-in",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "chat",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "focus-visible",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "workbench",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "settings",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "studio",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "data",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "sign-in",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "chat",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "focus-visible",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "workbench",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "settings",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "studio",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    },
+    {
+      "label": "data",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "preference": "system",
+      "dark": true,
+      "overflow": false,
+      "bg": "#1A1917",
+      "font": "\"Inter Variable\", Inter, system-ui, -app"
+    }
+  ],
+  "errors": [],
+  "overflow": []
+}

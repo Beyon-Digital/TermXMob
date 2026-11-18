@@ -1,0 +1,95 @@
+{
+  "commands": [
+    {
+      "id": "settings",
+      "keys": "Mod+,"
+    },
+    {
+      "id": "lock"
+    },
+    {
+      "id": "newConversation",
+      "keys": "Mod+Shift+N"
+    },
+    {
+      "id": "open-project"
+    },
+    {
+      "id": "saveFile",
+      "keys": "Mod+S"
+    },
+    {
+      "id": "closeTab",
+      "keys": "Mod+W"
+    },
+    {
+      "id": "palette",
+      "keys": "Mod+Shift+P"
+    },
+    {
+      "id": "left",
+      "keys": "Mod+B"
+    },
+    {
+      "id": "bottom",
+      "keys": "Mod+J"
+    },
+    {
+      "id": "view-agents"
+    },
+    {
+      "id": "explorer",
+      "keys": "Mod+Shift+E"
+    },
+    {
+      "id": "search",
+      "keys": "Mod+Shift+F"
+    },
+    {
+      "id": "sourceControl",
+      "keys": "Ctrl+Shift+G"
+    },
+    {
+      "id": "fullscreen",
+      "keys": "Ctrl+Meta+F"
+    },
+    {
+      "id": "quickFile",
+      "keys": "Mod+P"
+    },
+    {
+      "id": "nextTab",
+      "keys": "Ctrl+Tab"
+    },
+    {
+      "id": "previousTab",
+      "keys": "Ctrl+Shift+Tab"
+    },
+    {
+      "id": "focusGroup1",
+      "keys": "Mod+1"
+    },
+    {
+      "id": "focusGroup2",
+      "keys": "Mod+2"
+    },
+    {
+      "id": "focusGroup3",
+      "keys": "Mod+3"
+    },
+    {
+      "id": "newTerminal",
+      "keys": "Ctrl+Shift+`"
+    },
+    {
+      "id": "focusTerminal",
+      "keys": "Ctrl+`"
+    },
+    {
+      "id": "detach-workspace"
+    },
+    {
+      "id": "return-to-main"
+    }
+  ]
+}

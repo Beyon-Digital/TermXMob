@@ -1,3 +1,4 @@
+@layer legacy {
 .desktop-control-block{display:grid;gap:10px;justify-content:stretch;align-items:start}
 .desktop-control-block>p,.desktop-control-block [role=alert] p{margin:0;font-size:13px;line-height:1.6}
 .desktop-control-block [role=alert]{display:grid;gap:8px;color:var(--foreground)}
@@ -9,3 +10,4 @@
 .desktop-control-facts strong{font-weight:500;color:var(--foreground);min-width:0;overflow-wrap:anywhere}
 .desktop-control-block .manager-form{margin-top:10px}
 @media (max-width:700px){.desktop-control-facts li{flex-direction:column;gap:0}}
+}

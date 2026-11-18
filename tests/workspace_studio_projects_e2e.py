@@ -86,7 +86,7 @@ def isolated_host(ui_dist,report):
         owner=state.identity.setup_owner(USERNAME,PASSWORD)
         folder=scratch/'agent-project';folder.mkdir();(folder/'read-only-fixture.txt').write_text('Synthetic Agent project source; Studio project CRUD must preserve this.\n')
         agent_project=state.projects.register(str(folder),name='Synthetic Agent folder')
-        app=create_app(state,web_dir=snapshot_ui(scratch,Path(ui_dist)))
+        app=create_app(state,web_dir=snapshot_ui(scratch,Path(ui_dist),classic=True))
         state.workspace.orchestrator.ensure(owner)
         async def no_catalog(_):return {}
         state.agent.catalogue._fetch=no_catalog

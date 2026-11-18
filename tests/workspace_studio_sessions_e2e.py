@@ -1060,7 +1060,7 @@ def run(destination,ui_dist,baseline=False):
         owner=state.identity.setup_owner('design-fixture','design-fixture-password-123')
         project_root=root/'project';project_root.mkdir();(project_root/'design-review.txt').write_text('# Synthetic local design QA fixture\nprint("original")\n')
         project=state.projects.register(str(project_root),name='Synthetic design QA project')
-        app=create_app(state,web_dir=snapshot_ui(root,Path(ui_dist)))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(ui_dist),classic=True))
         samples=io.BytesIO();Image.new('RGB',(320,180),(105,105,105)).save(samples,'PNG')
         media=state.artifacts.create(owner.id,project['id'],'image','Synthetic owned Studio output',blob=samples.getvalue(),mime='image/png')
         state._qa={'studio_image_url':'/api/media/artifacts/'+media['id']+'/export?format=original'}

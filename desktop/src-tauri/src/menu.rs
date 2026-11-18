@@ -1,11 +1,13 @@
 use tauri::menu::{
     AboutMetadataBuilder, CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder,
+    HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
 };
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 use crate::backend::Backend;
+use crate::menu_commands::{self, command_item};
 use crate::ui;
 
 pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
@@ -15,14 +17,14 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
     let copy_link = MenuItemBuilder::with_id("copy_link", "Copy Connection Link").build(app)?;
     let permissions = MenuItemBuilder::with_id("permissions", "Permissions…").build(app)?;
     let restart = MenuItemBuilder::with_id("restart", "Restart Backend").build(app)?;
-    let restart_app = MenuItemBuilder::with_id("restart_app", "Restart Termx").build(app)?;
+    let restart_app = MenuItemBuilder::with_id("restart_app", "Restart TermX").build(app)?;
     let check_updates =
         MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
     let autostart = CheckMenuItemBuilder::with_id("autostart", "Launch at Login")
         .checked(false)
         .build(app)?;
     let open_logs = MenuItemBuilder::with_id("open_logs", "Open Logs Folder").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit Termx")
+    let quit = MenuItemBuilder::with_id("quit", "Quit TermX")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
 
@@ -49,13 +51,20 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
         .item(&open_logs)
         .build()?;
 
-    let app_menu = SubmenuBuilder::new(app, "Termx")
+    // Items made with `command_item` carry a command id of the workspace registry and run nothing here: they emit an event
+    // and the workspace shell executes the command (see menu_commands.rs). Their order is pinned to native-menu.json.
+    let settings = command_item(app, "settings", "Settings…")?;
+    let lock = command_item(app, "lock", "Lock")?;
+    let app_menu = SubmenuBuilder::new(app, "TermX")
         .about(Some(
             AboutMetadataBuilder::new()
-                .name(Some("Termx"))
+                .name(Some("TermX"))
                 .version(Some(env!("CARGO_PKG_VERSION")))
                 .build(),
         ))
+        .separator()
+        .item(&settings)
+        .item(&lock)
         .separator()
         .item(&connect)
         .item(&copy_link)
@@ -68,6 +77,19 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
         .item(&quit)
         .build()?;
 
+    let new_chat = command_item(app, "newConversation", "New Chat")?;
+    let open_project = command_item(app, "open-project", "Open Project…")?;
+    let save = command_item(app, "saveFile", "Save")?;
+    let close_tab = command_item(app, "closeTab", "Close Tab")?;
+    let file = SubmenuBuilder::new(app, "File")
+        .item(&new_chat)
+        .item(&open_project)
+        .separator()
+        .item(&save)
+        .separator()
+        .item(&close_tab)
+        .build()?;
+
     let edit = SubmenuBuilder::new(app, "Edit")
         .undo()
         .redo()
@@ -78,26 +100,81 @@ pub fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>>
         .select_all()
         .build()?;
 
+    let palette = command_item(app, "palette", "Command Palette…")?;
+    let side_bar = command_item(app, "left", "Side Bar")?;
+    let panel = command_item(app, "bottom", "Panel")?;
+    let agents = command_item(app, "view-agents", "Agents")?;
+    let explorer = command_item(app, "explorer", "Explorer")?;
+    let search = command_item(app, "search", "Search")?;
+    let source_control = command_item(app, "sourceControl", "Source Control")?;
+    let full_screen = command_item(app, "fullscreen", "Full Screen")?;
     let reload = MenuItemBuilder::with_id("reload", "Reload UI")
         .accelerator("CmdOrCtrl+R")
         .build(app)?;
     let browser = MenuItemBuilder::with_id("browser", "Open in Browser").build(app)?;
     let view = SubmenuBuilder::new(app, "View")
+        .item(&palette)
+        .separator()
+        .item(&side_bar)
+        .item(&panel)
+        .separator()
+        .item(&agents)
+        .item(&explorer)
+        .item(&search)
+        .item(&source_control)
+        .separator()
+        .item(&full_screen)
+        .separator()
         .item(&reload)
         .item(&browser)
+        .build()?;
+
+    let go_to_file = command_item(app, "quickFile", "Go to File…")?;
+    let next_tab = command_item(app, "nextTab", "Next Tab")?;
+    let previous_tab = command_item(app, "previousTab", "Previous Tab")?;
+    let first_group = command_item(app, "focusGroup1", "First Group")?;
+    let second_group = command_item(app, "focusGroup2", "Second Group")?;
+    let third_group = command_item(app, "focusGroup3", "Third Group")?;
+    let focus_group = SubmenuBuilder::new(app, "Focus Group")
+        .item(&first_group)
+        .item(&second_group)
+        .item(&third_group)
+        .build()?;
+    let go = SubmenuBuilder::new(app, "Go")
+        .item(&go_to_file)
         .separator()
-        .fullscreen()
+        .item(&next_tab)
+        .item(&previous_tab)
+        .separator()
+        .item(&focus_group)
+        .build()?;
+
+    let new_terminal = command_item(app, "newTerminal", "New Terminal")?;
+    let toggle_terminal = command_item(app, "focusTerminal", "Toggle Terminal")?;
+    let terminal = SubmenuBuilder::new(app, "Terminal")
+        .item(&new_terminal)
+        .item(&toggle_terminal)
+        .build()?;
+
+    let detach = command_item(app, "detach-workspace", "Detach Workspace")?;
+    let return_to_main = command_item(app, "return-to-main", "Return to Main Workspace")?;
+    let window = SubmenuBuilder::with_id(app, WINDOW_SUBMENU_ID, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .item(&detach)
+        .item(&return_to_main)
         .build()?;
 
     let help_logs = MenuItemBuilder::with_id("open_logs", "Open Logs Folder").build(app)?;
     let help_browser = MenuItemBuilder::with_id("browser", "Open in Browser").build(app)?;
-    let help = SubmenuBuilder::new(app, "Help")
+    let help = SubmenuBuilder::with_id(app, HELP_SUBMENU_ID, "Help")
         .item(&help_browser)
         .item(&help_logs)
         .build()?;
 
     MenuBuilder::new(app)
-        .items(&[&app_menu, &edit, &view, &help])
+        .items(&[&app_menu, &file, &edit, &view, &go, &terminal, &window, &help])
         .build()
 }
 
@@ -161,14 +238,14 @@ fn toggle_background_mode(app: &AppHandle) {
     let enable = !backend.background_mode();
     sync_background_mode(app, !enable);
     let message = if enable {
-        "Keep agents and schedules running after you quit Termx?\n\nThis explicitly enables a user-owned background host for this profile. It continues until you stop it remotely or choose Stop Background Host. Independent service mode does not inherit the desktop shell’s macOS permission bridge. Verify computer-control permissions on the host before relying on unattended desktop control."
+        "Keep agents and schedules running after you quit TermX?\n\nThis explicitly enables a user-owned background host for this profile. It continues until you stop it remotely or choose Stop Background Host. Independent service mode does not inherit the desktop shell’s macOS permission bridge. Verify computer-control permissions on the host before relying on unattended desktop control."
     } else {
-        "Stop the independent background host and return to an app-managed host?\n\nActive agent work will stop. Afterwards, quitting Termx also stops its host."
+        "Stop the independent background host and return to an app-managed host?\n\nActive agent work will stop. Afterwards, quitting TermX also stops its host."
     };
     let handle = app.clone();
     app.dialog()
         .message(message)
-        .title("Termx — Host Lifetime")
+        .title("TermX — Host Lifetime")
         .buttons(MessageDialogButtons::OkCancelCustom(
             "Switch host mode".into(),
             "Cancel".into(),
@@ -183,6 +260,11 @@ fn toggle_background_mode(app: &AppHandle) {
 }
 
 pub fn handle_menu_event(app: &AppHandle, id: &str) {
+    // A workspace command: the window runs it, never this process.
+    if let Some(command) = menu_commands::command_id(id) {
+        menu_commands::emit(app, command);
+        return;
+    }
     match id {
         "background_host" => toggle_background_mode(app),
         "stop_background_host" => {
@@ -240,7 +322,7 @@ fn toggle_autostart(app: &AppHandle) {
             sync_autostart(app);
             ui::notify(
                 app,
-                "Termx",
+                "TermX",
                 if enabled {
                     "Launch at login disabled"
                 } else {
@@ -250,7 +332,7 @@ fn toggle_autostart(app: &AppHandle) {
         }
         Err(error) => ui::notify(
             app,
-            "Termx",
+            "TermX",
             &format!("Could not update launch at login: {error}"),
         ),
     }

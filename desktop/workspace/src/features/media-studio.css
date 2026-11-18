@@ -1,3 +1,4 @@
+@layer legacy {
 /* Studio is a canvas with a compact creation dock; expanded controls use native dialogs. */
 .media-studio {
   --studio-canvas: var(--bg);
@@ -598,4 +599,5 @@ html[data-app-workspace=studio] .media-studio .studio-generate:focus-visible { o
 @media (max-height: 560px) {
   html[data-app-workspace=studio] .media-studio .studio-dock-main:has(textarea:focus-visible) { outline: none; }
   html[data-app-workspace=studio] .media-studio .studio-controls .studio-prompt:focus-visible { outline: var(--control-focus-ring); outline-offset: var(--control-focus-offset); border-radius: 8px; }
+}
 }

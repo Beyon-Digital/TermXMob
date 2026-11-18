@@ -1,0 +1,32 @@
+/* Task board additions: who runs a node (the executor chip) and the Blocked state. Tokens only. */
+@layer legacy, primitives, shell, surfaces;
+
+@layer surfaces {
+  .task-row .task-exec {
+    flex: none;
+    border-color: var(--border);
+    background: transparent;
+    color: var(--text-2);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+
+  /* Blocked waits on a person. The dot is an accent ring; the words "Blocked" and the reason carry the meaning. */
+  .task-dot[data-status='blocked'] {
+    background: transparent;
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  .task-status[data-status='blocked'] {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .task-row .task-blocked {
+    color: var(--text);
+  }
+
+  .task-row .task-blocked .button {
+    margin-left: var(--space-4);
+  }
+}

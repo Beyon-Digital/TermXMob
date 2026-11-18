@@ -483,7 +483,7 @@ def run(destination, ui_dist):
             folder.mkdir()
             projects.append(state.projects.register(str(folder), name=name))
         project, second_project = projects
-        app = create_app(state, web_dir=snapshot_ui(root, Path(ui_dist)))
+        app = create_app(state, web_dir=snapshot_ui(root, Path(ui_dist),classic=True))
         session = state.workspace.create_session(owner, title='Studio settings verification',
             project_id=project['id'], cwd=project['path'])
         state.workspace.orchestrator.ensure(owner, session_id=session['id'])

@@ -1,3 +1,4 @@
+@layer legacy {
 /* Typed content shares Agent's neutral reading surface and existing controls. */
 .workspace-shell[data-workspace=agent] :is(.content-file-tile,.content-link-preview){display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid var(--border);border-radius:12px;color:var(--text);text-decoration:none;text-align:left}
 .workspace-shell[data-workspace=agent] :is(.content-file-tile,.content-link-preview)>span:not(.content-type-icon){display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
@@ -54,3 +55,4 @@
 .workspace-shell[data-workspace=agent] .content-workflow-receipt>.button:disabled{opacity:.5;cursor:not-allowed}
 @media(pointer:coarse){.workspace-shell[data-workspace=agent] .content-workflow-receipt>.button{min-height:44px}}
 @container(max-width:640px){.workspace-shell[data-workspace=agent] .content-workflow-receipt{flex-wrap:wrap}.workspace-shell[data-workspace=agent] .content-workflow-receipt>.button{margin-left:auto}}
+}

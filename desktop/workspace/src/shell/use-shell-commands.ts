@@ -1,0 +1,179 @@
+import {useEffect, useRef, useState, type Dispatch, type SetStateAction} from 'react';
+import {defaults, loadBindings, shortcutSurface, type Bindings} from '../lib/keybindings';
+import {
+  commandAvailable,
+  findCommand,
+  type Command,
+  type CommandActions,
+  type CommandContext,
+  type CommandInvocation,
+} from './commands';
+import {requestChangeStep, requestScmCommand} from '../features/scm/scm-bus';
+import {requestSaveFile} from '../features/editor/save-request';
+import {isDetachedWindow, nativeWorkspace} from '../lib/native';
+import {listenNativeMenu} from '../lib/native-menu';
+import {detachedBrowser} from '../lib/window-journal';
+import {useAuth} from './AuthGate';
+import type {LayoutController} from './layout-controller';
+import type {ShellNavigation} from './navigation-state';
+import type {WorkspaceNavigation} from './use-workspace-navigation';
+import {requestAgentSurface} from '../lib/agent-surface-requests';
+import {resolveMenuCommand} from './native-menu';
+import {useShortcuts} from './use-shortcuts';
+import {useWorkspaceData} from './WorkspaceDataProvider';
+
+type Options = {
+  navigation: ShellNavigation;
+  nav: WorkspaceNavigation;
+  layout: LayoutController;
+  openNewChat: () => void;
+  togglePalette: () => void;
+  openSavedLayouts: () => void;
+  toggleFullscreen: () => void;
+  openNewChatWithOptions: () => void;
+  /** Quick open in the tab layout: a file tab opens from the chosen result. */
+  openQuickOpen: () => void;
+  detachWorkspace: () => void;
+  returnToMain: () => void;
+  recoverWindows: () => void;
+  openProject: () => void;
+};
+
+/**
+ * Commands and keys: the bindings (stored per principal), what the shell offers a command (`CommandActions`), and the one
+ * keyboard dispatcher. What each command does is in `commands.ts`; this is the wiring between those and the shell.
+ */
+export function useShellCommands(options: Options) {
+  const {navigation, nav, layout, openNewChat, togglePalette, openSavedLayouts, toggleFullscreen} = options;
+  const {auth, lockedNow, beginLock, openHostStop} = useAuth();
+  const {load} = useWorkspaceData();
+  const {workspace, setWorkspaceState} = navigation;
+  const [bindings, setBindings] = useState<Bindings>({...defaults});
+
+  useEffect(() => {
+    if (auth) setBindings(loadBindings(localStorage.getItem('termx-keybindings:' + auth.principal.id)));
+  }, [auth?.principal.id]);
+  useEffect(() => {
+    if (auth) localStorage.setItem('termx-keybindings:' + auth.principal.id, JSON.stringify(bindings));
+  }, [bindings, auth?.principal.id]);
+
+  const context: CommandContext = {
+    workspace,
+    hostAdmin: !!auth?.principal.scopes.includes('host-admin'),
+    engine: layout.engine,
+    detached: isDetachedWindow() || (!nativeWorkspace() && detachedBrowser),
+    native: nativeWorkspace(),
+  };
+  const actions: CommandActions = {
+    setManager: nav.setManager,
+    setWorkspace: value => nav.setWorkspace(value),
+    openWorkflows: () => {
+      setWorkspaceState('agent');
+      nav.setManager('workflows');
+    },
+    openMainAgent: () => void nav.openMainAgent(),
+    openNewChat,
+    refreshConversations: () => void load(),
+    lockWorkspace: () => void beginLock(),
+    stopHost: openHostStop,
+    chooseLayout: value => layout.chooseLayout(value),
+    openSurface: layout.openSurface,
+    focusPanel: layout.focusPanel,
+    quickOpen: () => {
+      if (layout.engine === 'tree') {
+        nav.setManager('');
+        options.openQuickOpen();
+        return;
+      }
+      layout.requestQuickOpen();
+      nav.setManager('');
+      layout.chooseLayout('workbench');
+    },
+    browserCommand: (command, explicit) => {
+      if (explicit) {
+        layout.requestBrowserCommand(command);
+        nav.setManager('');
+        layout.chooseLayout('browser');
+      } else window.dispatchEvent(new CustomEvent('termx-browser-command', {detail: {command}}));
+    },
+    panelCommand: layout.commands.panelCommand,
+    toggleFullscreen,
+    openSavedLayouts,
+    toggleSidebar: () => {
+      layout.rememberLayout();
+      window.dispatchEvent(new Event('termx-sidebar-toggle'));
+    },
+    toggleSidePanel: layout.commands.toggleSidePanel,
+    toggleBottomPanel: layout.commands.toggleBottomPanel,
+    togglePalette,
+    toggleFocusMode: layout.toggleFocus,
+    undoLayout: layout.undoLayout,
+    resetLayout: layout.resetLayout,
+    splitGroup: layout.commands.splitGroup,
+    focusGroup: layout.commands.focusGroup,
+    maximizeGroup: layout.commands.maximizeGroup,
+    moveTabToOtherGroup: layout.commands.moveTabToOtherGroup,
+    newTerminal: layout.commands.newTerminal,
+    showView: layout.showSideBarView,
+    openNewChatWithOptions: options.openNewChatWithOptions,
+    newCliSession: () => requestAgentSurface('cli.new'),
+    focusCliSession: () => requestAgentSurface('cli.focus'),
+    addCurrentSite: () => requestAgentSurface('sites.addCurrent'),
+    showHostStatus: () => requestAgentSurface('host.status'),
+    detachWorkspace: options.detachWorkspace,
+    returnToMain: options.returnToMain,
+    recoverWindows: options.recoverWindows,
+    openProject: options.openProject,
+    saveFile: requestSaveFile,
+    scmCommand: requestScmCommand,
+    changeStep: requestChangeStep,
+  };
+
+  function runCommand(command: Command, invocation: CommandInvocation) {
+    // A command of the other layout engine does nothing, even from the palette.
+    if (command.engine && command.engine !== layout.engine) return;
+    if (!commandAvailable(command, context)) {
+      if (command.when !== 'agent' || invocation.source !== 'palette') return;
+      nav.setWorkspace('agent');
+    }
+    if (command.leavesManager) nav.setManager('');
+    command.run(actions, invocation);
+  }
+
+  // The native menu only names a command; running it, and refusing it while locked, is the shell's job as for any key.
+  const latestRun = useRef(runCommand);
+  latestRun.current = runCommand;
+  useEffect(() => {
+    let live = true;
+    let release = () => {};
+    void listenNativeMenu(id => {
+      const command = resolveMenuCommand(id, lockedNow.current);
+      if (!command) return;
+      latestRun.current(command, {source: 'palette', terminalFocused: shortcutSurface(document.activeElement) === 'terminal'});
+    }).then(stop => {
+      if (live) release = stop;
+      else stop();
+    });
+    return () => {
+      live = false;
+      release();
+    };
+  }, []);
+
+  useShortcuts({
+    bindings,
+    engine: layout.engine,
+    suspended: () => lockedNow.current,
+    run: (id, terminalFocused) => {
+      const command = findCommand(id);
+      if (command) runCommand(command, {source: 'shortcut', terminalFocused});
+    },
+    escape: () => {
+      if (workspace !== 'agent' || !layout.canRestoreFocus()) return false;
+      layout.toggleFocus();
+      return true;
+    },
+  });
+
+  return {bindings, setBindings: setBindings as Dispatch<SetStateAction<Bindings>>, context, runCommand};
+}

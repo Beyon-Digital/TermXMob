@@ -1,0 +1,324 @@
+{
+  "states": [
+    {
+      "label": "editor-ts",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(250, 249, 247)",
+      "terminalFont": null,
+      "terminalBg": null,
+      "fold_placeholders": 1,
+      "matches": 3
+    },
+    {
+      "label": "editor-md",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(250, 249, 247)",
+      "terminalFont": null,
+      "terminalBg": null
+    },
+    {
+      "label": "terminal",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "light",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(250, 249, 247)",
+      "terminalFont": "16px",
+      "terminalBg": "rgb(250, 249, 247)",
+      "sessions": 2,
+      "mounted_xterms": 2
+    },
+    {
+      "label": "terminal-tab-style",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "style": {
+        "state": "active",
+        "height": "35px",
+        "padding": "0px 4px 0px 12px",
+        "borderBottom": "2px solid rgb(176, 80, 45)",
+        "background": "rgb(243, 241, 236)",
+        "toolbarHeight": "36px",
+        "closeOpacity": "1",
+        "layers": 14
+      }
+    },
+    {
+      "label": "terminal-switch",
+      "scheme": "light",
+      "viewport": [
+        375,
+        812
+      ],
+      "mounted_xterms": 2,
+      "first_tab_text": "033[0m \\033[91mbright-red\\033[0m\\n'; echo\n ready-$((6*7))\nred green yellow blue "
+    },
+    {
+      "label": "editor-ts",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(250, 249, 247)",
+      "terminalFont": null,
+      "terminalBg": null,
+      "fold_placeholders": 1,
+      "matches": 3
+    },
+    {
+      "label": "editor-md",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(250, 249, 247)",
+      "terminalFont": null,
+      "terminalBg": null
+    },
+    {
+      "label": "terminal",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "light",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(250, 249, 247)",
+      "terminalFont": "16px",
+      "terminalBg": "rgb(250, 249, 247)",
+      "sessions": 2,
+      "mounted_xterms": 2
+    },
+    {
+      "label": "terminal-tab-style",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "style": {
+        "state": "active",
+        "height": "35px",
+        "padding": "0px 4px 0px 12px",
+        "borderBottom": "2px solid rgb(176, 80, 45)",
+        "background": "rgb(243, 241, 236)",
+        "toolbarHeight": "36px",
+        "closeOpacity": "1",
+        "layers": 14
+      }
+    },
+    {
+      "label": "terminal-switch",
+      "scheme": "light",
+      "viewport": [
+        1280,
+        900
+      ],
+      "mounted_xterms": 2,
+      "first_tab_text": "jai@jae project % printf '\\033[31mred\\033[0m \\033[32mgreen\\033[0m \\033[33myellow"
+    },
+    {
+      "label": "editor-ts",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(26, 25, 23)",
+      "terminalFont": null,
+      "terminalBg": null,
+      "fold_placeholders": 1,
+      "matches": 3
+    },
+    {
+      "label": "editor-md",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(26, 25, 23)",
+      "terminalFont": null,
+      "terminalBg": null
+    },
+    {
+      "label": "terminal",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "theme": "dark",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(26, 25, 23)",
+      "terminalFont": "16px",
+      "terminalBg": "rgb(26, 25, 23)",
+      "sessions": 2,
+      "mounted_xterms": 2
+    },
+    {
+      "label": "terminal-tab-style",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "style": {
+        "state": "active",
+        "height": "35px",
+        "padding": "0px 4px 0px 12px",
+        "borderBottom": "2px solid rgb(222, 126, 86)",
+        "background": "rgb(44, 43, 40)",
+        "toolbarHeight": "36px",
+        "closeOpacity": "1",
+        "layers": 14
+      }
+    },
+    {
+      "label": "terminal-switch",
+      "scheme": "dark",
+      "viewport": [
+        375,
+        812
+      ],
+      "mounted_xterms": 2,
+      "first_tab_text": "033[0m \\033[91mbright-red\\033[0m\\n'; echo\n ready-$((6*7))\nred green yellow blue "
+    },
+    {
+      "label": "editor-ts",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(26, 25, 23)",
+      "terminalFont": null,
+      "terminalBg": null,
+      "fold_placeholders": 1,
+      "matches": 3
+    },
+    {
+      "label": "editor-md",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(26, 25, 23)",
+      "terminalFont": null,
+      "terminalBg": null
+    },
+    {
+      "label": "terminal",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "theme": "dark",
+      "overflow": false,
+      "editorFont": "\"JetBrains Mono Variable\", \"Je",
+      "editorSize": "13px/20px",
+      "editorBg": "rgb(26, 25, 23)",
+      "terminalFont": "16px",
+      "terminalBg": "rgb(26, 25, 23)",
+      "sessions": 2,
+      "mounted_xterms": 2
+    },
+    {
+      "label": "terminal-tab-style",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "style": {
+        "state": "active",
+        "height": "35px",
+        "padding": "0px 4px 0px 12px",
+        "borderBottom": "2px solid rgb(222, 126, 86)",
+        "background": "rgb(44, 43, 40)",
+        "toolbarHeight": "36px",
+        "closeOpacity": "1",
+        "layers": 14
+      }
+    },
+    {
+      "label": "terminal-switch",
+      "scheme": "dark",
+      "viewport": [
+        1280,
+        900
+      ],
+      "mounted_xterms": 2,
+      "first_tab_text": "jai@jae project % printf '\\033[31mred\\033[0m \\033[32mgreen\\033[0m \\033[33myellow"
+    }
+  ],
+  "errors": [],
+  "overflow": [],
+  "console": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ]
+}

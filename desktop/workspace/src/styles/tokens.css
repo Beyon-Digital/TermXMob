@@ -1,0 +1,248 @@
+/* The single token source for the workspace UI.
+   Visual baseline: /Users/jai/.agents/DESIGN.md. Do not add colours anywhere else;
+   the design guard (src/design-guard.test.ts) fails on hex values outside this file.
+
+   Cascade layers are declared once, here, so every later stylesheet can join one.
+   Order is lowest to highest priority:
+     legacy      existing component CSS, wrapped in place until each file is migrated
+     primitives  shared controls and base elements built from these tokens
+     shell       the IDE frame (activity bar, side bar, tab groups, status bar)
+     surfaces    editor, terminal, source control, chat and other content surfaces
+   Declarations inside a layer lose to unlayered ones, and !important inverts the
+   order, so only remove !important from files that have left `legacy`. */
+@layer legacy, primitives, shell, surfaces;
+
+/* ==========================================================================
+   DESIGN.md tokens, verbatim. Light is the default; dark is toggled with
+   `.dark` or `[data-theme=dark]` on <html>, and follows prefers-color-scheme
+   until the theme hook has resolved a preference (see lib/theme.ts).
+   ========================================================================== */
+:root {
+  --bg: #FAF9F7;          /* page */
+  --surface: #FFFFFF;     /* inputs, popovers, raised areas */
+  --surface-2: #F3F1EC;   /* hover, user messages, skeletons */
+  --border: #E6E3DC;
+  --border-strong: #CFCABF;
+  --text: #1F1E1B;
+  --text-2: #5E5B54;
+  --text-3: #6B675F;      /* placeholders, meta */
+  --accent: #B0502D;
+  --accent-hover: #9A4526;
+  --accent-fg: #FFFFFF;
+  --danger: #B3261E;
+  --success: #2A7348;
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Source Serif 4", Georgia, serif;  /* optional: display headings, long-form reading only */
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius: 8px;          /* controls, cards */
+  --radius-lg: 12px;      /* modals, composer, large containers */
+  --shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
+}
+
+.dark,
+:root[data-theme="dark"] {
+  --bg: #1A1917;
+  --surface: #232220;
+  --surface-2: #2C2B28;
+  --border: #3A3835;
+  --border-strong: #4A4844;
+  --text: #F2F0EB;
+  --text-2: #B5B1A8;
+  --text-3: #9A968D;
+  --accent: #DE7E56;
+  --accent-hover: #E8926C;
+  --accent-fg: #1A1917;
+  --danger: #F0877E;
+  --success: #6BC48F;
+  --shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.4);
+}
+
+/* Before the theme hook runs (first paint, no data-theme yet) follow the system.
+   Must stay identical to the dark block above; design-guard.test.ts compares them. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]):not(.dark) {
+    --bg: #1A1917;
+    --surface: #232220;
+    --surface-2: #2C2B28;
+    --border: #3A3835;
+    --border-strong: #4A4844;
+    --text: #F2F0EB;
+    --text-2: #B5B1A8;
+    --text-3: #9A968D;
+    --accent: #DE7E56;
+    --accent-hover: #E8926C;
+    --accent-fg: #1A1917;
+    --danger: #F0877E;
+    --success: #6BC48F;
+    --shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.4);
+  }
+}
+
+/* Native form controls and scrollbars follow the active theme. */
+:root { color-scheme: light; }
+.dark,
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]):not(.dark) { color-scheme: dark; }
+}
+
+/* The Inter and JetBrains Mono packages are bundled (fontsource variable builds,
+   no CDN) and register as "Inter Variable" / "JetBrains Mono Variable". They resolve
+   ahead of the DESIGN.md family names; the fallbacks are unchanged. */
+:root {
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ==========================================================================
+   Scale tokens (DESIGN.md: spacing, type, controls, layout, motion)
+   ========================================================================== */
+:root {
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* size / line pairs; weights are 400, 500, 600 only */
+  --text-xs: 12px;   --line-xs: 16px;
+  --text-sm: 14px;   --line-sm: 20px;
+  --text-base: 16px; --line-base: 24px;
+  --text-lg: 18px;   --line-lg: 28px;
+  --text-xl: 20px;   --line-xl: 28px;
+  --text-2xl: 24px;  --line-2xl: 32px;
+  --text-3xl: 32px;  --line-3xl: 40px;  /* marketing hero only */
+
+  --control: 40px;          /* buttons, inputs */
+  --control-compact: 32px;  /* desktop pointer only */
+  --control-touch: 44px;    /* minimum hit area on touch */
+  --row: 36px;              /* list rows, sidebar items (36-44) */
+  --header-height: 48px;    /* side panel and surface headers */
+
+  --reading-width: 720px;   /* chat and long-form column */
+  --content-width: 1120px;  /* app content */
+  --prose-width: 68ch;
+
+  --scrim: rgb(0 0 0 / 0.4);
+
+  /* 120-200ms, ease-out, opacity and transform only */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 200ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Touch: controls grow to the 44px minimum. */
+@media (pointer: coarse) {
+  :root {
+    --control: var(--control-touch);
+    --control-compact: var(--control-touch);
+    --row: var(--control-touch);
+  }
+}
+
+/* ==========================================================================
+   IDE EXTENSIONS (owner-approved; plan "Approved-by-this-plan deviations")
+   These extend DESIGN.md for editor density. Desktop pointer only: touch keeps
+   the 44px hit areas above. Nothing outside this fenced block may exceed the
+   DESIGN.md scale.
+   ========================================================================== */
+:root {
+  /* density: touch defaults, tightened for a fine pointer below */
+  --ide-tab-h: var(--control-touch);     /* tab strip and panel header */
+  --ide-row-h: var(--control-touch);     /* tree, source control and search rows */
+  --ide-status-h: var(--control-touch);  /* status bar */
+  --ide-action: var(--control-touch);    /* tab close and row actions */
+  --ide-input-h: var(--control-touch);   /* dense inputs */
+  --ide-input-size: var(--text-base);
+  --ide-input-line: var(--line-base);
+
+  /* code type */
+  --code-size: 14px;  --code-line: 20px;   /* editor and diff */
+  --term-size: 12px;  --term-line: 16px;   /* terminal */
+
+  /* side bar width limits */
+  --sidebar-width: 260px;
+  --sidebar-min: 200px;
+  --sidebar-max: 420px;
+
+  /* syntax: three hues beyond the single accent. Strings reuse the success value.
+     Keywords, comments and punctuation reuse existing tokens. */
+  --syntax-string: var(--success);
+  --syntax-constant: #7A5A12;
+  --syntax-entity: #2F6B66;
+  --syntax-keyword: var(--accent);
+  --syntax-comment: var(--text-3);
+  --syntax-punctuation: var(--text-2);
+
+  /* terminal: 16-colour ANSI palette derived from tokens, plus muted blue and magenta */
+  --ansi-blue: #2F5F85;
+  --ansi-magenta: #8A4470;
+  --ansi-black: var(--text-3);
+  --ansi-red: var(--danger);
+  --ansi-green: var(--success);
+  --ansi-yellow: var(--syntax-constant);
+  --ansi-cyan: var(--syntax-entity);
+  --ansi-white: var(--text-2);
+  --ansi-bright-black: color-mix(in srgb, var(--ansi-black) 80%, var(--text));
+  --ansi-bright-red: color-mix(in srgb, var(--ansi-red) 80%, var(--text));
+  --ansi-bright-green: color-mix(in srgb, var(--ansi-green) 80%, var(--text));
+  --ansi-bright-yellow: color-mix(in srgb, var(--ansi-yellow) 80%, var(--text));
+  --ansi-bright-blue: color-mix(in srgb, var(--ansi-blue) 80%, var(--text));
+  --ansi-bright-magenta: color-mix(in srgb, var(--ansi-magenta) 80%, var(--text));
+  --ansi-bright-cyan: color-mix(in srgb, var(--ansi-cyan) 80%, var(--text));
+  --ansi-bright-white: var(--text);
+
+  /* text selection in the editor and terminal: accent at 24% over the surface */
+  --selection: color-mix(in srgb, var(--accent) 24%, transparent);
+
+  /* diff tints: 12% of the status colour over whatever surface it sits on */
+  --diff-add: color-mix(in srgb, var(--success) 12%, transparent);
+  --diff-del: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.dark,
+:root[data-theme="dark"] {
+  --syntax-constant: #D9B36C;
+  --syntax-entity: #86BDB4;
+  --ansi-blue: #8FB1CC;
+  --ansi-magenta: #C9A0B8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]):not(.dark) {
+    --syntax-constant: #D9B36C;
+    --syntax-entity: #86BDB4;
+    --ansi-blue: #8FB1CC;
+    --ansi-magenta: #C9A0B8;
+  }
+}
+
+@media (pointer: fine) {
+  :root {
+    --ide-tab-h: 36px;
+    --ide-row-h: 32px;
+    --ide-status-h: 24px;
+    --ide-action: 24px;
+    --ide-input-h: 32px;
+    --ide-input-size: var(--text-sm);
+    --ide-input-line: var(--line-sm);
+  }
+}
+/* ======================== end IDE EXTENSIONS ======================== */
+
+/* Base document. */
+@layer primitives {
+  html {
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--line-base);
+    color: var(--text);
+    background: var(--bg);
+  }
+}

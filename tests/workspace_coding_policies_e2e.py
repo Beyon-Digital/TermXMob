@@ -22,7 +22,7 @@ def run(destination):
         from termx.agent.secrets import CredentialStore
         state.credentials=CredentialStore(memory={});state.agent.credentials=state.credentials
         state.agent.save_provider(provider_id='fixture',kind='openai-compatible',name='No-network fixture',base_url='http://127.0.0.1:1/v1',model='fixture',capabilities=['functions'],api_key='fixture-only')
-        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist'))
+        app=create_app(state,web_dir=snapshot_ui(root,Path(__file__).resolve().parents[1]/'desktop/workspace/dist',classic=True))
         conversation=state.workspace.create_session(owner,title='Consent proof',project_id=registered['id'],cwd=str(project),provider_id='fixture',mode='agent')
         report['UI_asset_snapshot']=json.loads((root/'fixture-ui-snapshot.json').read_text())
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]

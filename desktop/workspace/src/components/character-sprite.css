@@ -1,3 +1,4 @@
+@layer legacy {
 .character-sprite {
   display: inline-flex;
   align-items: center;
@@ -20,4 +21,5 @@
   border: 1px dashed var(--border);
   border-radius: 9px;
   font-size: 20px;
+}
 }

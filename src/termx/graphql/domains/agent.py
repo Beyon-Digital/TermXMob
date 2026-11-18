@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from strawberry.scalars import JSON
 from strawberry.types import Info
 
+from termx.agent.tools import web
 from termx.audit import log_event
 from termx.engines.env import env_diff_report, resolve_executable
 from termx.graphql.context import TermxContext
@@ -37,6 +38,19 @@ from termx.graphql.inputs import (
 from termx.graphql import types as T
 
 Ctx = Info[TermxContext, None]
+
+
+@strawberry.type
+class WebSearchStatus(T.DictBacked):
+    """``source`` is ``environment`` (TERMX_AI_WEB_SEARCH_API_KEY), ``credential_store`` (saved here) or null (no key).
+    The key itself is never returned."""
+
+    available: bool
+    provider: str
+    source: str | None
+    store_available: bool
+    custom_endpoint: bool
+    error: str | None
 
 _APPROVAL_DECISIONS = {"approved", "denied", "cancel", "revise"}
 _MAX_APPROVAL_FEEDBACK = 10_000
@@ -140,6 +154,13 @@ class AgentQueries:
     def agent_providers(self, info: Ctx) -> list[T.AgentProvider]:
         info.context.require("agent-view")
         return T.AgentProvider.wrap_all(info.context.state.agent.list_providers())
+
+    @strawberry.field
+    @resolver
+    def web_search_status(self, info: Ctx) -> WebSearchStatus:
+        """Whether the agent's web_search tool is offered, and where its API key comes from."""
+        info.context.require_host('ai-settings')
+        return WebSearchStatus.wrap(web.search_status(info.context.state.agent.credentials))  # type: ignore[return-value]
 
     @strawberry.field
     @resolver
@@ -504,6 +525,34 @@ class AgentMutations:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         log_event("agent_provider_save", provider_id=input.id, provider_kind=input.kind)
         return T.AgentProvider.wrap(provider)
+
+    @strawberry.mutation
+    @resolver
+    def set_web_search_key(self, info: Ctx, key: str) -> WebSearchStatus:
+        """Save the search API key in the OS credential store. The reply is the new status, never the key."""
+        ctx = info.context
+        ctx.require_host('ai-settings')
+        store = ctx.state.agent.credentials
+        try:
+            web.set_search_key(store, key)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("web_search_key_set")
+        return WebSearchStatus.wrap(web.search_status(store))  # type: ignore[return-value]
+
+    @strawberry.mutation
+    @resolver
+    def clear_web_search_key(self, info: Ctx) -> WebSearchStatus:
+        """Remove the saved search API key. A key set in the host environment stays and is reported as such."""
+        ctx = info.context
+        ctx.require_host('ai-settings')
+        store = ctx.state.agent.credentials
+        try:
+            web.clear_search_key(store)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_event("web_search_key_cleared")
+        return WebSearchStatus.wrap(web.search_status(store))  # type: ignore[return-value]
 
     @strawberry.mutation
     @resolver

@@ -1,7 +1,7 @@
-/* The borderless card and blue–purple effort rail follow the supplied reference. */
-.session-model-popover{--effort-blue:#72a9f9;--effort-purple:#ad7fe7;--effort-label:var(--effort-purple);--effort-thumb:#fff;position:fixed;z-index:60;width:256px;max-width:calc(100vw - 32px);padding:12px;border:0;border-radius:16px;background:var(--surface);color:var(--text,var(--foreground));box-shadow:var(--shadow-overlay);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;transform-origin:bottom right}
-.session-model-chip{--effort-label:#ad7fe7}
-html[data-theme=light] :is(.session-model-chip,.session-model-popover){--effort-label:#7740ae}
+@layer legacy {
+/* The effort control is a token-styled rail: a filled track up to a round thumb, in the one accent. */
+.session-model-popover{--effort-label:var(--text-2);--effort-thumb:var(--surface);position:fixed;z-index:60;width:256px;max-width:calc(100vw - 32px);padding:12px;border:0;border-radius:16px;background:var(--surface);color:var(--text,var(--foreground));box-shadow:var(--shadow-overlay);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;transform-origin:bottom right}
+.session-model-chip{--effort-label:var(--text-2)}
 html:is([data-app-workspace=agent],[data-app-workspace=studio]) .workspace-shell .chat-region .composer-controls>.composer-model-chip.session-model-chip{border:0;border-radius:16px;background:var(--surface-2)}
 .workspace-shell .chat-region .composer-controls>.composer-model-chip.session-model-chip .model-effort-label{color:var(--effort-label)}
 .session-model-popover[data-state=open]{animation:effort-popover-in 160ms ease-out}
@@ -19,10 +19,11 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) .workspace-shell
 .session-model-popover.session-model-popover .effort-reset{grid-column:3;grid-row:1 / 3;align-self:start;width:32px;height:32px;min-height:32px;padding:8px;flex:none;border:0;border-radius:8px;color:var(--text-2,var(--secondary))}
 .session-model-popover.session-model-popover :is(.effort-model-choice,.effort-reset):hover:not(:disabled){background:var(--surface-2,var(--muted))}
 .session-model-popover .effort-range{position:relative;width:100%;height:32px;border-radius:16px;isolation:isolate;cursor:pointer}
-.session-model-popover .effort-track{position:absolute;inset:4px 0;height:24px;border:0;border-radius:16px;background:linear-gradient(90deg,var(--effort-blue),var(--effort-purple));overflow:hidden;pointer-events:none}
-.session-model-popover .effort-particles{position:absolute;inset:0;opacity:.55;background-image:radial-gradient(circle at 12% 30%,var(--effort-thumb) 0 .6px,transparent 1px),radial-gradient(circle at 28% 68%,var(--effort-thumb) 0 .5px,transparent 1px),radial-gradient(circle at 45% 25%,var(--effort-thumb) 0 .5px,transparent 1px),radial-gradient(circle at 63% 72%,var(--effort-thumb) 0 .7px,transparent 1px),radial-gradient(circle at 78% 35%,var(--effort-thumb) 0 .6px,transparent 1px),radial-gradient(circle at 90% 65%,var(--effort-thumb) 0 .5px,transparent 1px)}
+.session-model-popover .effort-track{position:absolute;inset:4px 0;height:24px;border:1px solid var(--border-strong);border-radius:16px;background:var(--surface-2);overflow:hidden;pointer-events:none}
+.session-model-popover .effort-track::before{content:'';position:absolute;inset:0 auto 0 0;width:calc(14px + var(--effort-progress,0) * (100% - 28px));background:var(--accent)}
+.session-model-popover .effort-particles{display:none}
 .session-model-popover .effort-thumb-position{position:absolute;top:0;bottom:0;left:14px;right:14px;pointer-events:none;transform:translateX(calc(var(--effort-progress) * 100%));transition:transform 160ms ease-out}
-.session-model-popover .effort-thumb{position:absolute;left:0;top:2px;width:28px;height:28px;border:0;border-radius:50%;background:var(--effort-thumb);transform:translateX(-50%)}
+.session-model-popover .effort-thumb{position:absolute;left:0;top:2px;width:28px;height:28px;border:2px solid var(--accent);border-radius:50%;background:var(--effort-thumb);transform:translateX(-50%)}
 .session-model-popover .effort-slider{position:absolute;inset:0;appearance:none;-webkit-appearance:none;width:100%;height:32px;margin:0;padding:0;opacity:0;cursor:pointer}
 .session-model-popover .effort-slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:28px;height:28px}
 .session-model-popover .effort-slider::-moz-range-thumb{width:28px;height:28px;border:0}
@@ -60,3 +61,4 @@ html .session-model-popover.session-model-popover[data-input-method=pointer] :fo
 @keyframes effort-label-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(pointer:coarse){.session-model-popover .effort-popover-heading{grid-template-columns:44px minmax(0,1fr) 44px;grid-template-rows:20px 44px;height:64px}.session-model-popover.session-model-popover :is(.effort-model-choice,.effort-reset,.model-menu-back,.model-account-choice,.model-favorite,.effort-connections){height:44px;min-height:44px}.session-model-popover.session-model-popover :is(.effort-reset,.model-menu-back,.model-favorite){width:44px}.session-model-popover .effort-range,.session-model-popover .effort-slider{height:44px}.session-model-popover .effort-track{top:10px;bottom:10px}.session-model-popover .effort-thumb{top:8px}.session-model-popover .model-menu-heading{height:44px}.session-model-popover .model-menu-option{min-height:44px;padding-block:8px}}
 @media(prefers-reduced-motion:reduce){.session-model-popover,.session-model-popover *{animation:none!important;transition:none!important}}
+}

@@ -1,3 +1,4 @@
+@layer legacy {
 .control-plane { width:100%; min-width:0; max-width:var(--agent-content-width,1120px); margin-inline:auto; padding:32px 32px 48px; color:var(--foreground); container-type:inline-size; }
 .control-plane :is(h1,h2,h3,p) { margin:0; }
 .control-plane h1 { font-size:var(--agent-text-2xl,24px); line-height:var(--agent-line-2xl,32px); font-weight:600; letter-spacing:-.01em; }
@@ -173,3 +174,4 @@
 
 /* Project dialogs use surface contrast rather than a decorative frame. */
 html[data-app-workspace=agent] :is(.dialog-content.control-inspector,.dialog-content:has(.add-project-form)){border:0}
+}

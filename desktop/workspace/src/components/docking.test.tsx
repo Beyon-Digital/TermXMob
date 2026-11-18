@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {render,screen,fireEvent,cleanup} from '@testing-library/react';
+import {act,render,screen,fireEvent,cleanup} from '@testing-library/react';
 import {afterEach,describe,it,expect} from 'vitest';
 import DockWorkspace from './DockWorkspace';
 import {layouts,restoreWindowBounds,type DockMap} from '../lib/docking';
@@ -27,4 +27,21 @@ it('pauses global dock commands and Escape while inactive without losing expande
  view.rerender(<ActiveWorkspace active/>);
  fireEvent.keyDown(window, {key: 'Escape'});
  expect(view.container.querySelector('.dock-workspace')).not.toHaveClass('dock-full-view');
+});
+it('cycles the tabs of a stack forward and backward from the next and previous tab commands', () => {
+ function Stack() {const [map, setMap] = useState<DockMap>({...layouts.chat, editor: 'main', review: 'main', conversation: 'main'}); return <DockWorkspace map={map} onChange={setMap} rightVisible rightWidth={380} onDetach={() => {}} children={{conversation: <p>Chat body</p>, editor: <p>Editor body</p>, review: <p>Review body</p>}}/>}
+ render(<Stack/>);
+ const selected = () => screen.getAllByRole('tab', {selected: true}).map(tab => tab.textContent);
+ const command = (name: string) => act(() => {window.dispatchEvent(new CustomEvent('termx-panel-command', {detail: {command: name}}));});
+ const first = selected();
+ expect(first).toHaveLength(1);
+ command('next');
+ const second = selected();
+ command('next');
+ const third = selected();
+ expect(new Set([first[0], second[0], third[0]]).size).toBe(3);
+ command('next');
+ expect(selected()).toEqual(first);
+ command('previous');
+ expect(selected()).toEqual(third);
 });

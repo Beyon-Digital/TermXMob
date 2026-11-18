@@ -4,7 +4,9 @@ This change adds independent Agent, media Studio and Data workspaces. It also ad
 
 ## Design references
 
-The shared app frame uses a compact rail, quiet navigation, focused content, anchored composer menus and inset keyboard focus. Studio and Agent keep independent navigation and composers. Collapsible panels support reduced motion. Local reference screenshots and development captures are not redistributed in the repository.
+**Superseded direction.** The baseline is now the shared DESIGN.md (tokens in `desktop/workspace/src/styles/tokens.css`) and the agent-first IDE shell described in [Workspace UI](workspace-ui.md). The earlier references below describe the chat-first shell that still ships until each IDE slice lands. Slice U0 (foundations) is the only IDE slice implemented so far: tokens, Inter and JetBrains Mono, CSS layers, the design guard and the 720px chat column. IDE-chrome reference images are not yet captured; see `docs/design-refs/README.md`. Acceptance items UX-02, DOCK-01, VIEW-01 and A11Y-01 are partial until re-evidenced on the new shell (`plans/desktop-workspace/acceptance.json`).
+
+Earlier (chat-first) references: the shared app frame uses a compact rail, quiet navigation, focused content, anchored composer menus and inset keyboard focus. Studio and Agent keep independent navigation and composers. Collapsible panels support reduced motion. Local reference screenshots and development captures are not redistributed in the repository.
 
 ## Agent workspace
 

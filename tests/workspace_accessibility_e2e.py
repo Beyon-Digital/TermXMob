@@ -1,4 +1,4 @@
-"""Opt-in axe/rendered keyboard proof against an isolated real workspace host.
+"""Opt-in axe/rendered keyboard proof of the default IDE layout against an isolated real workspace host.
 
 Run: python tests/workspace_accessibility_e2e.py OUTPUT_DIR AXE_CORE_4_10_3_JS
 No agents/providers are executed. No default configuration store is accessed.
@@ -67,49 +67,58 @@ def run(destination, axe_source):
                     report['production_bundle']=page.evaluate('Array.from(document.scripts).map(s=>s.src).find(s=>s.includes("/assets/index-"))?.split("/").pop()')
                     page.get_by_label('Username',exact=True).fill('accessibility-owner');page.get_by_label('Password',exact=True).fill('accessibility-fixture-password-123')
                     page.get_by_role('button',name='Continue with password').click()
+                    # 200% zoom leaves 720 CSS pixels: under the 768px breakpoint, so the layout is the phone projection
+                    # (one tab stack, a drawer and a bottom navigation) instead of the tab groups.
+                    phone=page.viewport_size['width']<768
+                    top=page.get_by_role('banner',name='Window')
+                    nav=page.get_by_role('navigation',name='Primary')
                     try:
-                        # Select the named sidebar entry; its title also appears in the
-                        # breadcrumb after authenticated deep-link restoration.
-                        if zoom == 200:
-                            page.get_by_role('button',name='Show sidebar',exact=True).click()
-                        page.get_by_role('complementary',name='Chats and agents',exact=True).get_by_role('button',name=re.compile(r'^Keyboard workspace fixture(?:\s|$)')).click()
-                        hide_sidebar=page.get_by_role('navigation',name='Workspace navigation',exact=True).get_by_role('button',name='Hide sidebar',exact=True)
-                        if zoom == 200 and hide_sidebar.is_visible():
-                            hide_sidebar.click()
+                        # The IDE layout is the default: the deep link opens the conversation in the Chat tab.
+                        if phone:top.wait_for(timeout=60000)
+                        else:page.get_by_role('tablist',name='Editor group 1 tabs').wait_for(timeout=60000)
                         page.wait_for_function("""()=>{const t=document.querySelector('textarea[aria-label="Message"]'),b=document.querySelector('button[aria-label="Session options"]');return !!t&&!t.disabled&&!!b&&!b.disabled}""",timeout=60000)
                     except Exception:
                         page.screenshot(path=str(destination / f"startup-failure-{zoom}.png"))
                         (destination / f"startup-failure-{zoom}.html").write_text(page.content(), encoding="utf-8")
                         raise
-                    page.get_by_text('Keyboard workspace fixture',exact=True).last.wait_for(state='attached')
+                    assert page.get_by_role('region',name='conversation panel').count()==0,'the classic dock is not the default'
+                    if phone:expect(top.get_by_role('heading')).to_contain_text('Keyboard workspace fixture')
+                    else:page.get_by_role('tab',name='Keyboard workspace fixture').wait_for()
                     page.get_by_role('textbox',name='Message',exact=True).wait_for()
                     for theme in ('dark','light'):
-                        current=page.locator('html').get_attribute('data-theme') or 'dark'
-                        if current!=theme:
-                            page.get_by_role('button',name='Workspace actions',exact=True).click()
-                            page.get_by_role('button',name='Appearance',exact=True).click()
-                            preferences=page.get_by_role('dialog',name='Settings',exact=True)
-                            # General is selected through links on desktop and a native category chooser on narrow screens.
-                            category=preferences.get_by_role('combobox',name='Settings category',exact=True)
-                            if category.is_visible():expect(category).to_have_value('preferences')
-                            else:expect(preferences.get_by_role('navigation',name='Settings categories').get_by_role('link',name='General',exact=True)).to_have_attribute('aria-current','page')
-                            preferences.get_by_role('combobox',name='Theme preference',exact=True).select_option(theme)
-                            preferences.get_by_role('button',name='Close',exact=True).click()
-                            expect(preferences).to_be_hidden()
+                        current=page.locator('html').get_attribute('data-theme') or 'light'
+                        if current!=theme and phone:
+                            nav.get_by_role('button',name='More').click()
+                            page.get_by_role('menuitem',name='Settings',exact=True).click()
+                            expect(top.get_by_role('heading')).to_contain_text('Settings')
+                            expect(page.get_by_role('heading',name='General',exact=True)).to_be_visible()
+                            page.get_by_role('combobox',name='Theme preference',exact=True).select_option(theme)
                             expect(page.locator('html')).to_have_attribute('data-theme',theme)
+                            page.get_by_role('button',name=re.compile('Switch tab')).click()
+                            page.get_by_role('menuitem',name=re.compile('Keyboard workspace fixture')).click()
+                            expect(top.get_by_role('heading')).to_contain_text('Keyboard workspace fixture')
+                        elif current!=theme:
+                            page.get_by_role('toolbar',name='Activity bar').get_by_role('button',name='Settings').click()
+                            settings_tab=page.get_by_role('tab',name='Settings',exact=True)
+                            expect(settings_tab).to_have_attribute('aria-selected','true')
+                            panel=page.locator('#'+settings_tab.get_attribute('aria-controls'))
+                            expect(panel.get_by_role('heading',name='General',exact=True)).to_be_visible()
+                            panel.get_by_role('combobox',name='Theme preference',exact=True).select_option(theme)
+                            expect(page.locator('html')).to_have_attribute('data-theme',theme)
+                            settings_tab.locator('.tab-close').click()
+                            expect(page.get_by_role('tab',name='Settings',exact=True)).to_have_count(0)
                         page.add_script_tag(path=str(axe))
                         assert page.evaluate('axe.version')=='4.10.3'
                         # Include WCAG AA contrast, names, landmarks and ARIA in the rendered DOM.
                         result=page.evaluate("""async()=>await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})""")
                         violations=[{'id':v['id'],'impact':v['impact'],'description':v['description'],'nodes':[{'target':n['target'],'summary':n.get('failureSummary')} for n in v['nodes']]} for v in result['violations']]
                         state_report={'theme':theme,'zoom_percent':zoom,'css_viewport':page.viewport_size,'device_scale_factor':scale,'reduced_motion':page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"),'overflow':page.evaluate('document.documentElement.scrollWidth>innerWidth'),'violations':violations,'incomplete_rules':[{'id':v['id'],'nodes':[{'target':n['target'],'summary':n.get('failureSummary'),'html':n.get('html'),'checks':n.get('any')} for n in v['nodes']]} for v in result['incomplete']]}
-                        tokens=page.evaluate("""()=>{const s=getComputedStyle(document.documentElement);return Object.fromEntries(['foreground','secondary','background','surface','muted','accent','accent-soft','destructive'].map(name=>[name,s.getPropertyValue('--'+name).trim()]))}""")
-                        state_report['text_contrasts']={f'{fg}/{bg}':contrast(tokens[fg],tokens[bg]) for fg,bg in [('foreground','background'),('secondary','surface'),('accent','accent-soft'),('destructive','muted')]}
+                        tokens=page.evaluate("""()=>{const s=getComputedStyle(document.documentElement);return Object.fromEntries(['text','text-2','text-3','bg','surface','surface-2','accent','accent-fg','danger'].map(name=>[name,s.getPropertyValue('--'+name).trim()]))}""")
+                        state_report['text_contrasts']={f'{fg}/{bg}':contrast(tokens[fg],tokens[bg]) for fg,bg in [('text','bg'),('text-2','surface'),('text-3','bg'),('accent-fg','accent'),('danger','surface-2')]}
                         assert min(state_report['text_contrasts'].values())>=4.5,state_report['text_contrasts']
                         report['states'].append(state_report)
                         assert not page.locator('.error-toast').is_visible(),'A host error is visible in the loaded workspace'
                         page.screenshot(path=str(destination/f'workspace-{theme}-{zoom}.png'))
-                        page.keyboard.press('Control+1')
                         # Traverse actual controls using keyboard and verify a visible focus indicator.
                         page.get_by_role('textbox',name='Message',exact=True).focus()
                         page.keyboard.press('Shift+Tab')
@@ -117,37 +126,45 @@ def run(destination, axe_source):
                         report['keyboard'].append({'theme':theme,'zoom_percent':zoom,'focus':focus})
                         assert focus['tag']!='BODY' and focus['outline']!='none' and focus['width']!='0px',focus
                         page.get_by_role('textbox',name='Message',exact=True).focus();page.keyboard.press('ControlOrMeta+A');page.keyboard.type('Keyboard-only preserved draft')
-                        page.keyboard.press('Control+2')
-                        page.locator('.file-row').filter(has_text='a11y.py').click()
+                        # Open the file from the Explorer into its own tab (the Chat tab stays mounted behind it).
+                        if phone:
+                            nav.get_by_role('button',name='Files').click()
+                            page.get_by_role('dialog',name='Explorer').get_by_role('treeitem',name=re.compile('a11y.py')).click()
+                            expect(top.get_by_role('heading')).to_contain_text('a11y.py')
+                        else:
+                            # Choosing the shown view again hides the side bar, so open Explorer only when it is not already showing.
+                            if not page.get_by_role('tree',name='Files').is_visible():page.get_by_role('toolbar',name='Activity bar').get_by_role('button',name='Explorer').click()
+                            page.get_by_role('tree',name='Files').get_by_role('treeitem',name=re.compile('a11y.py')).click()
+                            file_tab=page.get_by_role('tab',name=re.compile('a11y.py'))
+                            expect(file_tab).to_have_attribute('aria-selected','true')
                         page.locator('.cm-content').get_by_text('def greet(name):',exact=False).wait_for()
                         page.wait_for_timeout(250)
-                        workbench=page.evaluate("async()=>{const r=await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});const editor=document.querySelector('.editor-host .cm-scroller'),box=editor.getBoundingClientRect(),style=getComputedStyle(editor);return {editor_viewport:{width:Math.round(box.width),height:Math.round(box.height),font_size:style.fontSize,line_height:style.lineHeight},violations:r.violations.map(x=>({id:x.id,impact:x.impact,description:x.description,nodes:x.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})),overflow:document.documentElement.scrollWidth>innerWidth}}")
+                        workbench=page.evaluate("async()=>{const r=await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});const editor=document.querySelector('.file-tab-host .cm-scroller'),box=editor.getBoundingClientRect(),style=getComputedStyle(editor);return {editor_viewport:{width:Math.round(box.width),height:Math.round(box.height),font_size:style.fontSize,line_height:style.lineHeight},violations:r.violations.map(x=>({id:x.id,impact:x.impact,description:x.description,nodes:x.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})),overflow:document.documentElement.scrollWidth>innerWidth}}")
                         # A named editor with no practical space can pass axe. Keep
                         # at least six text lines and a usable horizontal viewport.
                         assert workbench['editor_viewport']['height']>=120,workbench['editor_viewport']
                         assert workbench['editor_viewport']['width']>=240,workbench['editor_viewport']
                         editor_actions=page.get_by_role('button',name='Editor actions',exact=True)
-                        workbench['editor_actions_visible']=editor_actions.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('.editor-tab-bar').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom}")
-                        assert workbench['editor_actions_visible'],('Editor actions trigger is clipped by its toolbar',editor_actions.evaluate("e=>{const r=x=>{const b=x.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom].map(Math.round)};return {button:r(e),bar:r(e.closest('.editor-tab-bar')),zoom:innerWidth}}"))
-                        # Advanced editor controls are revealed through the keyboard-accessible menu.
+                        workbench['editor_actions_visible']=editor_actions.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('.file-tab-bar').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom}")
+                        assert workbench['editor_actions_visible'],('Editor actions trigger is clipped by its toolbar',editor_actions.evaluate("e=>{const r=x=>{const b=x.getBoundingClientRect();return [b.left,b.top,b.right,b.bottom].map(Math.round)};return {button:r(e),bar:r(e.closest('.file-tab-bar')),zoom:innerWidth}}"))
+                        # Language actions are revealed through the keyboard-accessible menu, which stays inside the viewport.
                         editor_actions.focus();page.keyboard.press('Enter')
-                        editor_menu=page.get_by_role('dialog',name='Editor actions',exact=True)
-                        split_selector=editor_menu.get_by_role('combobox',name='Editor split layout',exact=True)
-                        expect(split_selector).to_be_visible()
-                        workbench['split_selector_visible']=split_selector.evaluate("e=>{const b=e.getBoundingClientRect(),p=e.closest('[role=dialog]').getBoundingClientRect();return b.height>=24&&b.left>=p.left&&b.right<=p.right&&b.top>=p.top&&b.bottom<=p.bottom&&p.left>=0&&p.top>=0&&p.right<=innerWidth&&p.bottom<=innerHeight}")
-                        workbench['split_selector_geometry']=split_selector.evaluate("e=>{const rect=node=>{const b=node.getBoundingClientRect();return {left:b.left,top:b.top,right:b.right,bottom:b.bottom,width:b.width,height:b.height}};const menu=e.closest('[role=dialog]');return {selector:rect(e),menu:rect(menu),style:menu.getAttribute('style'),viewport:{width:innerWidth,height:innerHeight}}}")
-                        if not workbench['split_selector_visible']:
-                            page.screenshot(path=str(destination/f'editor-menu-clipped-{theme}-{zoom}.png'))
-                            report['editor_menu_failure']={'theme':theme,'zoom_percent':zoom,**workbench['split_selector_geometry']}
-                            report['editor_menu_failure']['next_frame']=split_selector.evaluate("async e=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const p=e.closest('[role=dialog]'),b=p.getBoundingClientRect();return {left:b.left,top:b.top,right:b.right,bottom:b.bottom,style:p.getAttribute('style')}}")
-                        assert workbench['split_selector_visible'],('Editor split selector or its menu is clipped',workbench['split_selector_geometry'])
+                        editor_menu=page.get_by_role('menu',name='Editor actions',exact=True)
+                        expect(editor_menu).to_be_visible()
+                        workbench['menu_visible']=editor_menu.evaluate("e=>{const b=e.getBoundingClientRect();return b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight}")
+                        assert workbench['menu_visible'],('Editor actions menu is clipped by the viewport',editor_menu.bounding_box())
                         page.keyboard.press('Escape')
                         expect(editor_menu).to_be_hidden();expect(editor_actions).to_be_focused()
-                        report['states'].append({'theme':theme,'zoom_percent':zoom,'layout':'workbench','reduced_motion':True,**workbench})
+                        report['states'].append({'theme':theme,'zoom_percent':zoom,'layout':'editor tab','reduced_motion':True,**workbench})
                         page.screenshot(path=str(destination/f'workbench-{theme}-{zoom}.png'))
-                        page.keyboard.press('Control+1')
+                        # Back to the conversation: the draft was kept while the editor was in front.
+                        if phone:
+                            page.get_by_role('button',name=re.compile('Switch tab')).click()
+                            page.get_by_role('menuitem',name=re.compile('Keyboard workspace fixture')).click()
+                        else:page.get_by_role('tab',name='Keyboard workspace fixture').click()
                         assert page.get_by_role('textbox',name='Message',exact=True).input_value()=='Keyboard-only preserved draft', {'theme':theme,'zoom':zoom,'actual':page.get_by_role('textbox',name='Message',exact=True).input_value()}
                         page.get_by_role('textbox',name='Message',exact=True).fill('')
+                        if not phone:file_tab.locator('.tab-close').click()
                     context.close()
                 browser.close()
         finally:

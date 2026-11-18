@@ -3,6 +3,7 @@ import {Select} from '../components/ui/select';
 import {SettingsRow,SettingsSection} from '../components/ui/settings-section';
 import {formatPrice,formatTokens,modelInfo,modelLabel,providerModels} from '../lib/model-info';
 import type {AgentProvider} from '../lib/host-types';
+import {isAnthropic} from '../lib/provider-kinds';
 import {useDirtyForm} from './settings-forms';
 import './model-routing.css';
 
@@ -57,7 +58,7 @@ function RoleRow({role, pick, extraFallbacks, providers, disabled, onChange}: {r
      {groups.map(group => <optgroup key={group} label={group}>{choices.filter(choice => choice.group === group).map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</optgroup>)}
     </Select>
    </label>
-   {info && <p className="model-routing-meta">Context window {formatTokens(info.context_window)} · Input {formatPrice(info.price_in)} · Output {formatPrice(info.price_out)}</p>}
+   {info && <p className="model-routing-meta">Context window {formatTokens(info.context_window)} · {account && isAnthropic(account.kind) && info.price_in == null && info.price_out == null ? 'Cost unpriced' : `Input ${formatPrice(info.price_in)} · Output ${formatPrice(info.price_out)}`}</p>}
    {pick.fallback && extraFallbacks > 0 && <p className="model-routing-meta">{extraFallbacks === 1 ? '1 more fallback' : `${extraFallbacks} more fallbacks`} set through the API {extraFallbacks === 1 ? 'is' : 'are'} kept when you save.</p>}
   </div>
  </SettingsRow>;
