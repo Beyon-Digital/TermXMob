@@ -23,7 +23,7 @@ streaming path exists) and a durable `cli_session` record in the workspace store
 | `idle` | quiet with no recognised prompt (unknown, not necessarily ready) |
 | `done` | the process exited 0, was stopped, or its terminal was closed |
 | `failed` | the process exited non-zero or was killed |
-| `lost` | the host restarted (or stopped) while it was live; the process is gone |
+| `lost` | the host restarted (or stopped) while it was live and its terminal did not survive; the process is gone (it can usually be resumed, see below) |
 
 `waiting_input` and `needs_approval` set `attention: true`. Every change carries
 a `status_source`:
@@ -69,23 +69,29 @@ a `status_source`:
   Main-agent-only and hidden from child tasks and bots.
 * **Untrusted output.** `cli_session_read` returns the cleaned screen text, redacted,
   capped (max 20,000 characters) and marked `untrusted: true`. The final screen of a
-  finished session is kept in memory only.
+  finished or lost session is persisted with its record (the last 8,000 characters of the
+  cleaned screen, redacted, with any hook URL token removed) so it stays readable after a
+  host restart; it is only ever served through `read`, never in the session record.
 * **Environment scrubbing.** The child gets the host environment minus every `TERMX_*`
   variable, credential-shaped names, and variables inherited from a parent coding agent
   (`CLAUDECODE`, `CODEX_*`); only the CLI's own provider variables pass through
   (`ANTHROPIC_API_KEY` for claude, `OPENAI_API_KEY` for codex, ...).
-* **Hook tokens.** One random 256-bit token per session, held only as a digest in
-  memory, delivered to the CLI through `TERMX_CLI_HOOK_URL` (never on a command line or
-  in a file), compared in constant time, rate-limited, revoked on exit, never logged or
-  stored. `POST /api/cli-sessions/hook/{token}` is loopback-only, capped at 16 KiB, and
+* **Hook tokens.** One random 256-bit token per session, held in memory as a SHA-256 digest,
+  delivered to the CLI through `TERMX_CLI_HOOK_URL` (never on a command line or in a
+  file), compared in constant time, rate-limited, revoked on exit, never logged. The token
+  itself is never stored; only its digest is persisted with the record (a digest of 256
+  random bits is not a credential) so the hook of a CLI that outlives a host restart keeps
+  working. `POST /api/cli-sessions/hook/{token}` is loopback-only, capped at 16 KiB, and
   its payload is untrusted: a closed set of event names maps to a status hint, free text
   from the CLI is not carried into the status, and the only effect is that one session's
   status. The forwarder script itself sends only the event-name fields
   (`hook_event_name`, `notification_type`, `type`): prompts, tool inputs and replies in
   the CLI's event never leave the CLI process.
 * **Process hygiene.** Stop sends SIGINT, then SIGTERM, then SIGKILL, each after a grace
-  period, then reaps the PTY. Sessions are children of the host; closing the host marks
-  live sessions `lost` and the shutdown path kills their terminals.
+  period, then reaps the PTY. With the PTY holder (the default on macOS and Linux, see
+  [autonomous-agents.md](autonomous-agents.md#always-on-host-durable-terminals-keep-awake-and-health))
+  the terminals are owned by the holder and survive a host stop; otherwise sessions are
+  children of the host and closing it marks them `lost` and kills their terminals.
 * **Isolation.** `isolation: worktree` creates a branch `termx/cli-<id>` checkout under the
   delivery service (needs the project's `git-read` and `git-write` scopes). The checkout
   and branch are kept after the session ends so the work can be reviewed; the user's
@@ -128,10 +134,13 @@ folder is `cwd` or the terminal default and must be authorised.
 types the text (multi-line text is pasted; control bytes other than line breaks are
 dropped; max 16,000 characters) and presses Enter when `submit`.
 `POST /cli-sessions/{id}/interrupt` writes Ctrl-C. `POST /cli-sessions/{id}/stop` ends it.
+`POST /cli-sessions/{id}/resume` (`terminal-control`, plus the project grant for a managed
+principal) body `{"confirm_bypass": false}` (optional): see below. -> `201 Session`.
 
 Errors: `401` no/invalid credential, `403` missing scope, grant or refused bypass, `404`
-unknown or someone else's session, `409` CLI not installed / session already ended /
-worktree could not be made, `400` bad request, `503` could not spawn.
+unknown or someone else's session, `409` CLI not installed / session already ended / still
+running (resume) / already resumed / cannot resume / folder gone / worktree could not be made,
+`400` bad request, `503` could not spawn.
 
 `Session`:
 
@@ -143,12 +152,43 @@ worktree could not be made, `400` bad request, `503` could not spawn.
  "pty_session_id": "…", "sandbox_profile": "host", "mode": "default", "started_at": 0,
  "updated_at": 0, "ended_at": null, "exit_code": null, "ended_reason": null,
  "native_session_id": "<uuid or null>", "resumable": true, "prompt_chars": 12,
- "prompt_digest": "…"}
+ "prompt_digest": "…", "resumed_from": null, "resumed_to": null}
 ```
 
 `ended_reason` is `exited | stopped | closed | lost | monitor error`. The prompt text,
 argv and tokens are never stored or returned. Stream the TUI itself from
 `/api/sessions/{pty_session_id}/pty` (needs `terminal-control`, as for any terminal).
+
+## After a host restart
+
+With the PTY holder, a CLI session's terminal (and the CLI inside it) survives the host
+stopping, restarting or being killed. When the new host starts, `recover()` runs before
+anything is marked lost:
+
+* **Re-adopted.** A record whose terminal the holder still owns goes back to live: a monitor
+  is restarted and the status is **re-derived from the replayed output tail** (the quiet
+  screen shows the prompt, a dialog, or busy output), with `status_detail: "recovered after
+  host restart"`. The CLI's own hook keeps working (the digest is persisted), as long as the
+  host listens on the same port (a service does). Steering (send, interrupt, stop, the pty
+  websocket) works as before, and the replay of what happened while no host ran is intact.
+* **Finished while the host was down.** A held process that exited meanwhile is finished with
+  its real exit code (`done` or `failed`, `ended_reason: exited`) and its final screen.
+* **Lost.** Everything else (no holder, holder gone, machine rebooted) is marked `lost` with
+  `ended_reason: lost`. `resumable` stays true when the CLI can resume its own saved
+  conversation (`claude --resume <native id>`, `codex resume`), and the last screen stays
+  readable.
+
+**Resume** (`POST /api/cli-sessions/{id}/resume`) starts a NEW terminal and a NEW record for an
+ended or lost session using that CLI's own resume command with fresh hooks. The new record
+carries `resumed_from`, the old one `resumed_to` (a conversation is resumed once; the old record
+stays as history); folder, worktree, sandbox profile and mode are the originals. A session that
+ran in `bypass` mode is resumed in it only with `confirm_bypass: true` **and** a restricted
+sandbox profile, exactly as for creation (otherwise `403`); resume never adds a bypass flag to an
+ordinary session. Errors: `409` while the session is still running, already resumed, for a CLI
+without resume, or if the folder no longer exists.
+
+The resume command restores the conversation, not the process: running tool calls, background
+processes and the screen are gone, and a CLI may ask to trust the folder again.
 
 ## GraphQL / events
 
@@ -164,7 +204,7 @@ subscription { cli_session_events { type session { id cli status status_source a
 * `cli.session.status`: the status or its source changed.
 * `cli.session.exited`: the status became `done`, `failed` or `lost`.
 
-`session` is the same shape as the REST `Session` (types `CliSession`, `CliSessionEvent`
+`session` (including `resumed_from` / `resumed_to`) is the same shape as the REST `Session` (types `CliSession`, `CliSessionEvent`
 in `schema.graphql`). In-process listeners (for push notifications) can subscribe with
 `CliSessionService.add_listener`.
 
@@ -197,8 +237,13 @@ patterns report as `needs_approval`; stop ended it cleanly with no orphan proces
 codex `-c notify=[...]` override and `-C`/`-s`/`resume` parse on codex-cli 0.169.0.
 
 Not covered: the `Notification`, `PermissionRequest`, `PostToolUse` and `Stop` payloads from
-a real logged-in turn, any real codex session, and surviving a host restart (the follow-up
-durability work).
+a real logged-in turn, any real codex session, and `--resume` against a real logged-in
+conversation (resume is exercised with the fake CLI only).
+
+Surviving a host restart is covered by `tests/test_cli_sessions_durability.py`,
+`tests/test_cli_sessions_resume_api.py` and, with real `termx` processes stopped and killed
+(`tests/workspace_pty_restart_e2e.py`): the CLI session and its hook survive both a SIGTERM and a
+SIGKILL of the host.
 
 Claude asks to trust every new folder, so a worktree session starts on that dialog
 (`needs_approval`). TermX does not accept it for the user; answering it from the Main agent
