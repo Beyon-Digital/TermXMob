@@ -61,9 +61,9 @@ def run(destination):
                 def choose_category(label):
                     if mobile_category.is_visible():mobile_category.select_option(label=label)
                     else:nav.get_by_role('link',name=label,exact=True).click()
-                assert nav.get_by_role('link').count()==len(categories)
+                expect(nav.get_by_role('link')).to_have_count(len(categories))  # retries: the list can re-render while settings load
                 for category in categories:
-                    assert nav.get_by_role('link',name=category,exact=True).count()==1
+                    expect(nav.get_by_role('link',name=category,exact=True)).to_have_count(1)
                 nav.get_by_role('link',name='Access & sessions',exact=True).click()
                 # LAN HTTPS sits in the collapsed "Host connectivity" disclosure, and the port in its "Network settings" disclosure.
                 dialog.get_by_text('Host connectivity',exact=True).click();dialog.get_by_role('heading',name='Local network HTTPS',exact=True).wait_for()
