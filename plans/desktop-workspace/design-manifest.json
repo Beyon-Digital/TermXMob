@@ -1,4 +1,12 @@
 {
+  "superseded": {
+    "status": "superseded",
+    "by": "DESIGN.md, the shared design baseline (kept at ~/.agents/DESIGN.md on the owner's machine and mirrored in desktop/workspace/src/styles/tokens.css)",
+    "since": "2026-11-18",
+    "plan": "UI slice U0 (UI foundations) of the agent-first IDE shell",
+    "note": "This manifest records the earlier chat-first (ChatGPT-style) visual system: Geist type, green accent and graphite surfaces. Its tokens, typography and layout are superseded by DESIGN.md (Inter and JetBrains Mono, one terracotta accent, light and dark), implemented in desktop/workspace/src/styles/tokens.css. The file is kept as history. Do not add tokens here; see docs/workspace-ui.md.",
+    "implemented_in": "desktop/workspace/src/styles/tokens.css"
+  },
   "schema_version": "0.3",
   "product": "TermX desktop/web",
   "status": "runtime-mapped-with-original-design-provenance",

@@ -1,38 +1,99 @@
-# Coding workspace and chat
+# Workspace UI: agent-first IDE shell
 
-The shared app frame follows the user's [ChatGPT native reference](implementation-status.md#design-references); the code workspace retains the established proportions and hierarchy of the actual [VS Code workbench](https://code.visualstudio.com/docs/editing/getting-started/userinterface), [Cursor Agents Window](https://cursor.com/changelog/3-0), and the [official Codex introduction workshop](https://d2xo500swnpgl1.cloudfront.net/uploads/oaiacademy/Codex-101-Introduction-Demo-32ffbb3c-85da-4da9-973d-5b39ea7d39fd-1773866180169.pdf). The references were inspected before implementation.
+TermX is moving from a ChatGPT-style chat frame to an **agent-first IDE shell**: a multi-agent control surface and a coding environment in one window. This page is the UI direction and the contract for the redesign. Sections marked **Superseded** describe the chat-first shell that still ships until each slice below lands; they are kept so existing behaviour can be traced, not as a target.
 
-The review and content-panel flows also use the actual [Codex app first-look demonstration](https://www.youtube.com/watch?v=0e-Brv-gS9Q), [April browser demonstration](https://www.youtube.com/watch?v=Lm7-yFZ5fZQ), and [July developer update](https://www.youtube.com/watch?v=eiQgljOrkWU). These show review beside chat, a browser expanding into the workspace, and a floating composer that keeps the conversation available. Tab behavior was checked against the installed Codex desktop bundle as well as the [official app commands](https://learn.chatgpt.com/docs/reference/commands).
+## Status
 
-- **Chat** is a single readable transcript with a compact composer. Tool activity expands inline. Hover or focus a response for copy and inspection actions. Approvals, failures, and recovery stay visible, with a Review action by the composer when attention is needed.
-- **Code** gives most of the window to the editor, with a compact expandable file tree, file tabs, breadcrumbs, optional chat, and a bottom panel for terminals, diagnostics, debugging, preview, and delivery. Editor, checkout, docking, and detaching commands live in ellipsis menus.
-- **Workspace actions** in the top right opens Browser, Computer, Artifacts, Review, panel controls, saved layouts, recovery, appearance, action review, and workspace locking. All existing keyboard shortcuts and command palette routes remain available.
+| Slice | Scope | State |
+| --- | --- | --- |
+| **U0 Foundations** | One token file, Inter and JetBrains Mono, CSS layers, design guard, 720px chat column | Landed in this branch |
+| U1 Editor and terminal polish | Editor and ANSI themes, languages, find, fold, terminal tabs | Planned |
+| U2 Decompose `App.tsx` and commands | `shell/routes.ts`, one command registry feeding palette, keys and menus | Planned |
+| U3 Layout engine | Recursive split tree, tab groups, v1 layout migration, detach mapping | Planned |
+| U4 Chrome | Activity bar, side bar, title and status bars, mobile projection; Settings, Projects, Workflows as tabs | Planned |
+| U5 Source control | Merged source control view and diff tab | Planned |
+| U6 Agent surfaces | Sites view, CLI session tabs and badges, needs-you approvals, health in the status bar | Planned |
+| U7 Completion | Studio and Data as views, native menus, flip the flag, delete the old dock and aliases, guard budgets to zero | Planned |
 
-## Agent and Studio workspaces
+The IDE shell is built behind `?shell=ide` and a Settings toggle until U7. The running app is still the chat-first shell, restyled by U0 only through tokens, fonts and one column width. No layout, dock, editor or terminal behaviour changed in U0.
 
-The workspace switcher separates two primary jobs. **Agent** contains conversations, code and execution tools; **Studio** fills the working area with media creation and its library. Studio does not display the agent transcript or dock chrome beside its canvas. Returning to Agent restores the same dock arrangement, editor buffers and conversation draft. Existing terminal processes continue running. Capture indicators remain visible in either workspace.
+## Visual baseline
 
-Agent and Studio share a persistent 52px application rail, neutral light/dark chrome and an inset canvas. The rail exposes Agent, Studio, Projects and Settings without a second workspace switch in the header. Agent shows conversations; Studio shows Create, Music, Library, Saved assets and project context. New sidebar layouts use 240px while existing saved Agent widths remain valid. The workspace buttons expose selected state and support horizontal/vertical arrow keys, Home and End. Browser links can open Studio with `?workspace=studio`; normal conversation and settings routes remain available.
+The single visual baseline is the shared DESIGN.md: calm, content-first, warm neutrals, one terracotta accent, type and space carry hierarchy, borders instead of shadows (overlays excepted), no gradients or blur, weights 400 to 600, a 4 to 64 spacing scale, radius 8 and 12. Nothing in this repository overrides it except the fenced IDE extensions below.
 
-Studio keeps its prompt, model and Generate action in a compact bottom-centred dock beside Image/Video switching. References, camera/lens presets and generation settings open focused panels; selected reference summaries and relevant input errors remain visible. Create shows a large selected output with recent takes; Library and Saved assets have their own navigation. Advanced workflows stay in Tools. The agent welcome keeps examples optional, account setup expands in place, and the composer uses one quiet surface. Both areas use the shared native-first typography, installed Geist fallback and existing Lucide controls, alongside original TermX workspace marks and deterministic subagent glyphs. Studio retains its specialized creation workflow within the shared neutral frame.
+- **Tokens** live in `desktop/workspace/src/styles/tokens.css`: the DESIGN.md `:root` and `.dark` blocks, scale tokens (`--space-*`, `--text-xs` to `--text-3xl` with `--line-*`, `--control`, `--control-compact`, `--control-touch`, `--row`), and a fenced IDE block. Light is the default. Dark applies for `.dark` or `[data-theme=dark]` on `<html>`, and for the system preference until the theme hook has resolved one.
+- **Theme.** `lib/theme.ts` sets both `data-theme` and the `dark` class. A new profile defaults to **System**; an existing stored Light or Dark choice wins.
+- **Type.** Inter and JetBrains Mono, bundled through fontsource variable packages (no CDN). Mono is for code only.
+- **Layers.** `@layer legacy, primitives, shell, surfaces;` is declared once in `tokens.css`. All existing component CSS is wrapped in `legacy` and keeps its behaviour. New shared controls go in `primitives`, the IDE frame in `shell`, content surfaces in `surfaces`. `!important` inverts layer order, so remove it only from files that have left `legacy`.
+- **Aliases.** `src/styles/legacy-aliases.css` maps the retired names (`--background`, `--foreground`, `--secondary`, `--muted`, `--accent-soft`, `--surface-raised`, `--sidebar`, `--border-subtle`, `--destructive`, `--warning`, `--agent-*`, `--radius-sm`, `--radius-md`, `--motion-*`) to tokens. It is temporary: delete a line when nothing uses the name, and the file in U7.
+- **Design guard.** `src/design-guard.test.ts` counts, per file, hex colours outside `tokens.css`, `!important`, off-scale font sizes, radii and spacing, bare `outline: none`, gradients, `backdrop-filter`, weights above 600 and uppercase text. `src/design-budget.json` is the ratchet: counts may fall, never rise, and a new file starts at zero. After removing violations run `UPDATE_DESIGN_BUDGET=1 pnpm --dir desktop/workspace test design-guard` to tighten it.
+- **Contrast.** `src/styles/tokens.test.ts` resolves both themes and fails if any text, syntax or ANSI colour falls below 4.5:1 on `--bg` or `--surface-2`.
 
-The earlier Studio iteration used the local `ui-ux-pro-max` skill's verified minimalism guidance, the user's `craft-premium-ui` preferences, and direct visual review of [Higgsfield Cinema Studio](https://higgsfield.ai/generate). The public Image/Video composers and Camera panel were inspected; reference selection required sign-in, so its full authenticated flow was not claimed as observed. The generated landing-page pattern, replacement fonts and decorative animation suggestions were not applicable and were not adopted. Its disclosure search had no verified match; disclosure behavior follows the explicit premium-UI guidance and is checked against actual flows.
+### IDE extensions to DESIGN.md (owner-approved)
 
-That earlier Studio refinement passed all 1,456 frontend tests and TypeScript checking. After the final CSS-only dialog sizing change, the production build and 74-state rendered matrix passed again across dark/light desktop, phone, narrow and short viewports. The exact tested asset manifest was applied to the running local app without restarting it or changing the existing profile. See [the verification record](implementation-status.md#verification) for before/after screenshots, fixture boundaries, accessibility results and the local application receipt. Paid generation and authenticated native Studio actions remain unverified.
+Desktop pointer only. Touch keeps 44px controls.
 
-Studio now has a dedicated **Settings** view with **Providers**, **Models & defaults**, and **Generation limits**. Provider connections reuse the host credential store and refresh the shared Agent catalog on save; Studio model selections and local quotas remain separate. The settings route is `?workspace=studio&studio=settings`. Entering or leaving settings retains the creation draft and references. The dedicated settings evidence snapshot recorded 1,481 passing frontend tests; the Studio backend suites passed 316 tests. The final dedicated settings browser matrix covered 20 states and real isolated-host settings/provider writes, conflicts, quota refusal before provider dispatch, and desktop/narrow layouts. See [Studio Settings evidence](implementation-status.md#verification) for the exact tested build, accessibility tool limits, and separate local activation receipt. Authenticated native settings actions and paid generation were not exercised in the real profile.
+| Item | Value |
+| --- | --- |
+| Tab strip and panel header | 36px |
+| Tree, source control and search rows | 32px |
+| Status bar | 24px |
+| Tab close and row actions | 24 x 24 |
+| Dense inputs | 32px, 14px text |
+| Code type | Editor and diff 14/20, terminal 12/16 |
+| Side bar | 260px default, 200 to 420px resizable |
+| Syntax hues | Strings use the success value; constants `#7A5A12` / `#D9B36C`; entities `#2F6B66` / `#86BDB4` |
+| Terminal | 16-colour ANSI palette derived from tokens, with muted blue (`#2F5F85` / `#8FB1CC`) and magenta (`#8A4470` / `#C9A0B8`) |
+| Diff | 12% mixes of the success and danger tokens |
 
-## Current shared design
+Breakpoint 850 moves to 768, and the reading column is 720px.
 
-The shared frame follows the user's [ChatGPT native screenshot reference](implementation-status.md#design-references). A persistent 52px application rail separates Agent, Studio, Projects and Settings. The conversation sidebar uses a 240px default for new layouts while retaining saved widths. Neutral dark/light surfaces, an inset content canvas and quieter chrome replace the previous warm/copper styling. Studio keeps its specialized media creation layout. Its Music section uses the separately recorded [Suno layout reference](implementation-status.md#design-references), with original TermX branding and only host-supported controls.
+## Target layout (1280px)
 
-Conversation content sits in a centered column up to 736px: plain assistant prose, right-aligned rounded user requests, collapsed activity and a rounded composer with one quiet control row. Ordinary usage and context details live in Session options. Active execution, approvals, recoverable errors and Stop remain visible. Coordination lives in the right-hand Subagents sidebar, with critical decisions and recovery still inline. Routine chat footer chrome recedes when there is no capture status; capture monitoring remains mounted and every active-capture or unavailable-capture control remains visible. Connection, Commands, locking and fullscreen remain accessible through Workspace actions.
+```
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│ [≡] termxmob ▸ main        [ Search files and commands  ⌘P ]      [▯][▁] 2 need you│ 40
+├────┬───────────────────┬──────────────────────────────────┬───────────────────────┤
+│ Ag │ Agents       [+]  │ Main agent × │ api.ts ● │ +      │ Changes × │ Browser × │ 36
+│ Ex │ Needs you (2)     ├──────────────────────────────────┼───────────────────────┤
+│ Se │ Main agent working│      ‹ 720px chat column ›       │ src/api.ts   +12 −3   │
+│ SC │ Sub-agents        │  ▸ 12 actions · Completed        │ @@ -10,6 +10,9 @@     │
+│ Si │ CLI sessions      │  ┌ composer ─────────────────┐   │                       │
+│ Da │  Claude Code  appr│  │ [+]      model ▾   [Send] │   │                       │
+│ St │  Codex        done│  └───────────────────────────┘   │                       │
+│    │ Chats             ├──────────────────────────────────┴───────────────────────┤
+│ Pr │                   │ Terminal │ Problems │ Output      zsh × │ pnpm dev × │ +   │ 36
+│ ⚙  │                   │ $ pnpm test                                               │
+├────┴───────────────────┴───────────────────────────────────────────────────────────┤
+│ ● Connected · this Mac   main*   0 problems        Main agent working   Lock      │ 24
+└───────────────────────────────────────────────────────────────────────────────────┘
+  48        260                      flex                          380
+```
 
-Settings use a full-height desktop surface with a 240px category sidebar, functional category search, a readable 728px form column and grouped rows with controls on the right. Narrow screens use a native category selector through the same unsaved-change guard. Projects use a searchable folder/conversation list; update dates derive from actual related conversations, with an unavailable marker when no timestamp exists. No project metadata or conversation previews are fabricated.
+- **Activity bar views.** Agents (default: needs-you inbox, Main agent, Sub-agents, CLI sessions with status badges, Chats), Explorer, Search, Source control, Sites (pinned, suggested, open, per-site notes), Data and Studio. At the bottom: Projects, Settings, Account.
+- **Tabs.** `{id, kind, ref}`. Chat, file, diff, terminal, CLI session and browser tabs are multi-instance. Data, Studio, Settings and Projects are singletons. Settings, Projects and Workflows become tabs, with no blocking modal and no "Back to..." overlay. Studio and Data stop being workspace modes; `?workspace=...` deep links still resolve.
+- **Layout.** A recursive split tree replaces the preset dock. Content renders in a flat keyed layer so the editor, terminal and browser stream stay mounted as tabs move. Layout storage becomes `termx-layout-v2`; the eight presets migrate to named layouts and the v1 key stays read-only for one release.
+- **375px.** One tab stack, a drawer side bar and a bottom navigation (Agents, Files, Git, Term, More), projected at render time. The stored layout is not changed.
+- **One primary action per view.** New chat, Send, Commit, Approve, Open site, Add project or Run. Everything else is a ghost button. One command registry feeds the palette, keybindings, title bar and native menus.
+- **Chat.** A 720px column, a one-line "N actions" summary, a composer on `--surface`, and a token-styled effort control in place of the gradient slider. The companion habitat is off by default; sidebar hover mode, Focus mode and the floating chat are removed.
 
-The existing React/Vite and Radix/shadcn components remain; the app uses the native system font first with the installed Geist fallback. Drafts, references, unsaved buffers, terminal processes, account configuration and provider settings remain intact. The earlier neutral-Agent evidence snapshot recorded **1,501 passing tests across 182 files**, with TypeScript and a production build. **71 rendered states and 53 interaction checks** cover both themes, desktop/phone, narrow and short panes, keyboard navigation, retained drafts/buffers, configured/disconnected composer states and visible capture controls beneath a genuine draft-conflict notice. Automated axe reported zero violations, with 30 states retaining incomplete checks; this is not a claim of complete accessibility certification. The [verification record](implementation-status.md#verification) separates isolated browser evidence from local activation. No paid provider calls were made.
+### Names
 
-The [local activation receipt](implementation-status.md#verification) records that earlier build and its preserved host profile. Its native renderer refresh was unverified because macOS ScreenCaptureKit reported capture error -3811. Build, browser and native-activation evidence remain separate; historical counts and receipts do not establish validation of the newer Music implementation.
+TermX, Chat, Agents, Main agent, Sub-agents, CLI sessions, Explorer, Editor, Search, Source control, Browser, Sites, Terminal, Computer, Artifacts, Data, Studio, Projects, Workflows, Settings. Retire Workbench, Files & code, Review changes, Git changes, Delivery and Workspace actions.
+
+### Keys (VS Code conventions, planned)
+
+`Mod+P` and `Mod+Shift+P`, `Mod+B`, `Mod+J`, `Ctrl+backtick` terminal, `Mod+Shift+E`, `Mod+Shift+F` and `Ctrl+Shift+G` for Explorer, Search and Source control, `Mod+,` settings, `Mod+\` split, `Mod+1` to `Mod+3` focus a group, `Ctrl+Tab` next tab, `Mod+W` closes the active tab, `Mod+F` find. Terminal focus stops disabling shell shortcuts; an allowlist replaces the blanket bail-out. Until U2 and U4 land, the shortcut table under **Superseded** remains the shipped behaviour.
+
+## Evidence and references
+
+Reference images for the IDE chrome have not been added yet; see `docs/design-refs/README.md`. Slice evidence is stored under `docs/evidence/ide-shell/<slice>/` as screenshots at 375 x 812 and 1280 x 900 in light and dark, reviewed against the DESIGN.md checklist.
+
+---
+
+## Behaviour that carries over
+
+The sections below describe behaviour that the redesign keeps. Where a section names the old chrome (a 336px right sidebar, Workspace actions), read it as the capability, which moves into the Agents view, tabs and command palette.
 
 ## New chats, titles and checkouts
 
@@ -62,24 +123,13 @@ Responses preserve readable prose, lists and code while giving real file, link a
 
 ## Motion and disclosure lifecycle
 
-Shared controls use short state transitions: 140ms feedback, 180ms entry/layout changes and 120ms exits. Radix disclosures retain keyboard semantics and a quiet content rail. Closing sidebars, dialogs and animated disclosure content become inert immediately; painted exit retention does not keep their controls interactive. Rapid reopen cancels a pending sidebar removal. Reduced motion removes animation without weakening hidden/inert or focus boundaries. Motion never substitutes for a server-reported task or generation outcome.
+Shared controls use short state transitions: 120ms feedback and exits and 160ms entry and layout changes (the `--duration-*` tokens; DESIGN.md allows 120 to 200ms, ease-out, opacity and transform only). Radix disclosures retain keyboard semantics and a quiet content rail. Closing sidebars, dialogs and animated disclosure content become inert immediately; painted exit retention does not keep their controls interactive. Rapid reopen cancels a pending sidebar removal. Reduced motion removes animation without weakening hidden/inert or focus boundaries. Motion never substitutes for a server-reported task or generation outcome.
 
 ## Conversation tools and file references
 
 Active or critical task state stays visible while routine usage and context live in Session options. **Review changes**, **Browser**, **Terminal**, and **Files** open the corresponding workspace surface without replacing the conversation. Completed responses may offer a host-backed changed-file review action. Task approvals and recovery decisions remain separate from reviewing file changes.
 
 File references in assistant text, including inline code such as `src/App.tsx:25` and local Markdown file links, open the editor at the referenced file and line. The host resolves them inside the selected conversation's checkout. Ordinary web links remain links.
-
-## Tabs, full view, and floating chat
-
-- Use **+ → New workspace tab** in a panel header to open Chat, Files, Changes, Browser, Terminal, Computer, or Artifacts. Selecting an already-open surface activates its existing tab. Surfaces sharing a region use a tab strip; Left/Right and Home/End navigate it with the keyboard. Narrow windows combine the open surfaces into one workspace tab strip.
-- The panel actions menu offers **Open in side panel**, **Open in bottom panel**, and **Open in full view**, alongside placement and separate-window commands. Dragging a panel header also changes its placement. Panel contents remain mounted when switching tabs or regions, preserving editor buffers and conversation drafts.
-- **Close tab** hides that workspace surface. **Reopen closed tab** restores the most recently closed surface in the current window. Closing a workspace tab does not close the Browser's individual page tabs, end a terminal process, or cancel an agent task. The last workspace surface remains open.
-- **Expand panel** fills the workspace with the selected surface. When Chat is open, its same composer floats near the bottom; its text and attachments are the existing draft. The chevron shows or collapses the transcript, and the chat icon hides or restores the floating chat. The other open tool tabs stay available across the expanded header. **Restore split view**, or Escape from workspace chrome, returns to the previous panel arrangement.
-
-**Toggle bottom panel** (`Mod+J`) hides and restores docked bottom surfaces as well as the editor console, retaining their state. Moving the central tool to a side or bottom panel keeps Chat, or another open surface, in the center.
-
-**Toggle window full screen** is a separate command. It uses the native window API in the desktop host and the browser's Fullscreen API on the web; expanding a panel changes only the workspace layout.
 
 ## Review checkout changes
 
@@ -88,31 +138,6 @@ File references in assistant text, including inline code such as `src/App.tsx:25
 Select a changed file to inspect its numbered unified diff. **Review actions** switches to a split before/after diff or hides the file list, and the file header can open the current file in the editor. Refresh updates the checkout snapshot; visible unlocked workspaces also poll for changes. Binary files, unavailable runner checkouts, non-Git folders, stale file selections, and limited previews have explicit states. The list is bounded to 2,000 files and text previews to 1 MB, with partial counts and truncation identified in the UI.
 
 The read-only APIs are `GET /api/workspace/sessions/{id}/changes` and `GET /api/workspace/sessions/{id}/changes/diff?path=...`. A selected worktree supplies its `worktree_id` on both requests. The host checks the conversation's `git-read` authority and checkout binding before and after reading.
-
-## Default shortcuts
-
-`Mod` means Command on macOS or Ctrl on Windows/Linux. Bindings can be changed in Settings, and equivalent actions remain in the Commands menu when an external browser reserves a shortcut.
-
-| Action | Shortcut |
-| --- | --- |
-| Chat / Code / Browser / Changes | `Mod+1` / `Mod+2` / `Mod+3` / `Mod+4` |
-| Terminal workspace tab | `Mod+7` |
-| Close / reopen workspace tab | `Mod+W` / `Mod+Shift+T` |
-| Toggle sidebar / bottom panel | `Mod+B` / `Mod+J` |
-| Workspace commands / quick file open | `Mod+Shift+P` / `Mod+P` |
-| New chat | `Mod+Shift+N` |
-| Hold to dictate / tap to start and stop | `Mod+Shift+M` |
-| Toggle window full screen | `Ctrl+Meta+F` (Control+Command+F on macOS) |
-| New / close Browser page tab | `Mod+Alt+T` / `Mod+Alt+W` |
-| Reopen Browser page tab | `Mod+Alt+Shift+T` |
-
-## Sidebar behavior
-
-Use **Workspace actions → Sidebar** to choose **Pinned**, **Collapsed**, or **Float on hover**. The choice is stored per account on this device.
-
-The 52px application rail stays available in both workspaces, including when the sidebar is collapsed. In hover mode, entering the rail reveals a floating sidebar without moving the editor or transcript. Leaving it closes it after a short delay; keyboard focus keeps it open. Escape or clicking the work area dismisses it. Pinning returns it to the layout. On narrow screens, use the sidebar button and dismiss backdrop rather than relying on hover. The sidebar shortcut remains Command/Ctrl+B.
-
-Code and Review start with the conversation sidebar collapsed for more editing space. Saved arrangements continue to preserve panels, widths, and navigation visibility.
 
 ## Verification
 
@@ -197,3 +222,81 @@ Provider account **Limits** optionally configures response output tokens and req
 **Add project** and **New chat** use a filesystem folder picker with breadcrumbs, parent/home navigation, filtering, hidden folders and pagination. Project context transfer uses the same picker for files inside the authorized conversation checkout, with a selected-file list. Optional typed paths remain under **Enter path**. Host browsing requires the same host-wide authority as project registration; project file browsing stays inside its project/worktree root.
 
 [Limits and filesystem verification](implementation-status.md#execution-and-path-selection)
+
+---
+
+# Superseded: the chat-first (ChatGPT-style) shell
+
+> **Superseded by the agent-first IDE shell above.** Everything below describes the presentation that currently ships and is replaced slice by slice: the 52px application rail and Agent/Studio mode switch, the inset canvas, the right-hand Subagents sidebar, Workspace actions, floating chat and expand-panel, sidebar hover mode, the Pinned/Collapsed/Float choice, the shortcut table, and the ChatGPT, Suno, Cursor and VS Code reference language. Do not extend it. The visual values here (Geist type, graphite and green palette, 736px column) are retired: the baseline is now DESIGN.md through `src/styles/tokens.css`, Inter and JetBrains Mono, and a 720px reading column (changed in U0). Behaviour that survives was moved above.
+
+## Coding workspace and chat (superseded)
+
+The shared app frame follows the user's [ChatGPT native reference](implementation-status.md#design-references); the code workspace retains the established proportions and hierarchy of the actual [VS Code workbench](https://code.visualstudio.com/docs/editing/getting-started/userinterface), [Cursor Agents Window](https://cursor.com/changelog/3-0), and the [official Codex introduction workshop](https://d2xo500swnpgl1.cloudfront.net/uploads/oaiacademy/Codex-101-Introduction-Demo-32ffbb3c-85da-4da9-973d-5b39ea7d39fd-1773866180169.pdf). The references were inspected before implementation.
+
+The review and content-panel flows also use the actual [Codex app first-look demonstration](https://www.youtube.com/watch?v=0e-Brv-gS9Q), [April browser demonstration](https://www.youtube.com/watch?v=Lm7-yFZ5fZQ), and [July developer update](https://www.youtube.com/watch?v=eiQgljOrkWU). These show review beside chat, a browser expanding into the workspace, and a floating composer that keeps the conversation available. Tab behavior was checked against the installed Codex desktop bundle as well as the [official app commands](https://learn.chatgpt.com/docs/reference/commands).
+
+- **Chat** is a single readable transcript with a compact composer. Tool activity expands inline. Hover or focus a response for copy and inspection actions. Approvals, failures, and recovery stay visible, with a Review action by the composer when attention is needed.
+- **Code** gives most of the window to the editor, with a compact expandable file tree, file tabs, breadcrumbs, optional chat, and a bottom panel for terminals, diagnostics, debugging, preview, and delivery. Editor, checkout, docking, and detaching commands live in ellipsis menus.
+- **Workspace actions** in the top right opens Browser, Computer, Artifacts, Review, panel controls, saved layouts, recovery, appearance, action review, and workspace locking. All existing keyboard shortcuts and command palette routes remain available.
+
+## Agent and Studio workspaces
+
+The workspace switcher separates two primary jobs. **Agent** contains conversations, code and execution tools; **Studio** fills the working area with media creation and its library. Studio does not display the agent transcript or dock chrome beside its canvas. Returning to Agent restores the same dock arrangement, editor buffers and conversation draft. Existing terminal processes continue running. Capture indicators remain visible in either workspace.
+
+Agent and Studio share a persistent 52px application rail, neutral light/dark chrome and an inset canvas. The rail exposes Agent, Studio, Projects and Settings without a second workspace switch in the header. Agent shows conversations; Studio shows Create, Music, Library, Saved assets and project context. New sidebar layouts use 240px while existing saved Agent widths remain valid. The workspace buttons expose selected state and support horizontal/vertical arrow keys, Home and End. Browser links can open Studio with `?workspace=studio`; normal conversation and settings routes remain available.
+
+Studio keeps its prompt, model and Generate action in a compact bottom-centred dock beside Image/Video switching. References, camera/lens presets and generation settings open focused panels; selected reference summaries and relevant input errors remain visible. Create shows a large selected output with recent takes; Library and Saved assets have their own navigation. Advanced workflows stay in Tools. The agent welcome keeps examples optional, account setup expands in place, and the composer uses one quiet surface. Both areas use the shared native-first typography, installed Geist fallback and existing Lucide controls, alongside original TermX workspace marks and deterministic subagent glyphs. Studio retains its specialized creation workflow within the shared neutral frame.
+
+The earlier Studio iteration used the local `ui-ux-pro-max` skill's verified minimalism guidance, the user's `craft-premium-ui` preferences, and direct visual review of [Higgsfield Cinema Studio](https://higgsfield.ai/generate). The public Image/Video composers and Camera panel were inspected; reference selection required sign-in, so its full authenticated flow was not claimed as observed. The generated landing-page pattern, replacement fonts and decorative animation suggestions were not applicable and were not adopted. Its disclosure search had no verified match; disclosure behavior follows the explicit premium-UI guidance and is checked against actual flows.
+
+That earlier Studio refinement passed all 1,456 frontend tests and TypeScript checking. After the final CSS-only dialog sizing change, the production build and 74-state rendered matrix passed again across dark/light desktop, phone, narrow and short viewports. The exact tested asset manifest was applied to the running local app without restarting it or changing the existing profile. See [the verification record](implementation-status.md#verification) for before/after screenshots, fixture boundaries, accessibility results and the local application receipt. Paid generation and authenticated native Studio actions remain unverified.
+
+Studio now has a dedicated **Settings** view with **Providers**, **Models & defaults**, and **Generation limits**. Provider connections reuse the host credential store and refresh the shared Agent catalog on save; Studio model selections and local quotas remain separate. The settings route is `?workspace=studio&studio=settings`. Entering or leaving settings retains the creation draft and references. The dedicated settings evidence snapshot recorded 1,481 passing frontend tests; the Studio backend suites passed 316 tests. The final dedicated settings browser matrix covered 20 states and real isolated-host settings/provider writes, conflicts, quota refusal before provider dispatch, and desktop/narrow layouts. See [Studio Settings evidence](implementation-status.md#verification) for the exact tested build, accessibility tool limits, and separate local activation receipt. Authenticated native settings actions and paid generation were not exercised in the real profile.
+
+## Current shared design
+
+The shared frame follows the user's [ChatGPT native screenshot reference](implementation-status.md#design-references). A persistent 52px application rail separates Agent, Studio, Projects and Settings. The conversation sidebar uses a 240px default for new layouts while retaining saved widths. Neutral dark/light surfaces, an inset content canvas and quieter chrome replace the previous warm/copper styling. Studio keeps its specialized media creation layout. Its Music section uses the separately recorded [Suno layout reference](implementation-status.md#design-references), with original TermX branding and only host-supported controls.
+
+Conversation content sits in a centered column up to 736px (720px since U0): plain assistant prose, right-aligned rounded user requests, collapsed activity and a rounded composer with one quiet control row. Ordinary usage and context details live in Session options. Active execution, approvals, recoverable errors and Stop remain visible. Coordination lives in the right-hand Subagents sidebar, with critical decisions and recovery still inline. Routine chat footer chrome recedes when there is no capture status; capture monitoring remains mounted and every active-capture or unavailable-capture control remains visible. Connection, Commands, locking and fullscreen remain accessible through Workspace actions.
+
+Settings use a full-height desktop surface with a 240px category sidebar, functional category search, a readable 728px form column and grouped rows with controls on the right. Narrow screens use a native category selector through the same unsaved-change guard. Projects use a searchable folder/conversation list; update dates derive from actual related conversations, with an unavailable marker when no timestamp exists. No project metadata or conversation previews are fabricated.
+
+The existing React/Vite and Radix/shadcn components remain; the app uses the native system font first with the installed Geist fallback. Drafts, references, unsaved buffers, terminal processes, account configuration and provider settings remain intact. The earlier neutral-Agent evidence snapshot recorded **1,501 passing tests across 182 files**, with TypeScript and a production build. **71 rendered states and 53 interaction checks** cover both themes, desktop/phone, narrow and short panes, keyboard navigation, retained drafts/buffers, configured/disconnected composer states and visible capture controls beneath a genuine draft-conflict notice. Automated axe reported zero violations, with 30 states retaining incomplete checks; this is not a claim of complete accessibility certification. The [verification record](implementation-status.md#verification) separates isolated browser evidence from local activation. No paid provider calls were made.
+
+The [local activation receipt](implementation-status.md#verification) records that earlier build and its preserved host profile. Its native renderer refresh was unverified because macOS ScreenCaptureKit reported capture error -3811. Build, browser and native-activation evidence remain separate; historical counts and receipts do not establish validation of the newer Music implementation.
+
+## Tabs, full view, and floating chat
+
+- Use **+ → New workspace tab** in a panel header to open Chat, Files, Changes, Browser, Terminal, Computer, or Artifacts. Selecting an already-open surface activates its existing tab. Surfaces sharing a region use a tab strip; Left/Right and Home/End navigate it with the keyboard. Narrow windows combine the open surfaces into one workspace tab strip.
+- The panel actions menu offers **Open in side panel**, **Open in bottom panel**, and **Open in full view**, alongside placement and separate-window commands. Dragging a panel header also changes its placement. Panel contents remain mounted when switching tabs or regions, preserving editor buffers and conversation drafts.
+- **Close tab** hides that workspace surface. **Reopen closed tab** restores the most recently closed surface in the current window. Closing a workspace tab does not close the Browser's individual page tabs, end a terminal process, or cancel an agent task. The last workspace surface remains open.
+- **Expand panel** fills the workspace with the selected surface. When Chat is open, its same composer floats near the bottom; its text and attachments are the existing draft. The chevron shows or collapses the transcript, and the chat icon hides or restores the floating chat. The other open tool tabs stay available across the expanded header. **Restore split view**, or Escape from workspace chrome, returns to the previous panel arrangement.
+
+**Toggle bottom panel** (`Mod+J`) hides and restores docked bottom surfaces as well as the editor console, retaining their state. Moving the central tool to a side or bottom panel keeps Chat, or another open surface, in the center.
+
+**Toggle window full screen** is a separate command. It uses the native window API in the desktop host and the browser's Fullscreen API on the web; expanding a panel changes only the workspace layout.
+
+## Default shortcuts
+
+`Mod` means Command on macOS or Ctrl on Windows/Linux. Bindings can be changed in Settings, and equivalent actions remain in the Commands menu when an external browser reserves a shortcut.
+
+| Action | Shortcut |
+| --- | --- |
+| Chat / Code / Browser / Changes | `Mod+1` / `Mod+2` / `Mod+3` / `Mod+4` |
+| Terminal workspace tab | `Mod+7` |
+| Close / reopen workspace tab | `Mod+W` / `Mod+Shift+T` |
+| Toggle sidebar / bottom panel | `Mod+B` / `Mod+J` |
+| Workspace commands / quick file open | `Mod+Shift+P` / `Mod+P` |
+| New chat | `Mod+Shift+N` |
+| Hold to dictate / tap to start and stop | `Mod+Shift+M` |
+| Toggle window full screen | `Ctrl+Meta+F` (Control+Command+F on macOS) |
+| New / close Browser page tab | `Mod+Alt+T` / `Mod+Alt+W` |
+| Reopen Browser page tab | `Mod+Alt+Shift+T` |
+
+## Sidebar behavior
+
+Use **Workspace actions → Sidebar** to choose **Pinned**, **Collapsed**, or **Float on hover**. The choice is stored per account on this device.
+
+The 52px application rail stays available in both workspaces, including when the sidebar is collapsed. In hover mode, entering the rail reveals a floating sidebar without moving the editor or transcript. Leaving it closes it after a short delay; keyboard focus keeps it open. Escape or clicking the work area dismisses it. Pinning returns it to the layout. On narrow screens, use the sidebar button and dismiss backdrop rather than relying on hover. The sidebar shortcut remains Command/Ctrl+B.
+
+Code and Review start with the conversation sidebar collapsed for more editing space. Saved arrangements continue to preserve panels, widths, and navigation visibility.
