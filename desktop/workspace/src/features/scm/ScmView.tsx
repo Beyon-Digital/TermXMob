@@ -14,6 +14,7 @@ import {SCM_COMMAND_EVENT, takeScmCommand, type ScmCommand} from './scm-bus';
 import type {ScmEntry, Side} from './scm-types';
 import {useScm} from './use-scm';
 import './scm.css';
+import './scm-forms.css';
 
 type Props = {
   project: Project | null;
