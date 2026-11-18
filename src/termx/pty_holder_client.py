@@ -678,12 +678,9 @@ class HolderSupervisor:
                 return out
             out["reason"] = self.reason or ("held terminals are turned off; existing held sessions keep running" if requested == "direct" else None)
             return out
-        out["reason"] = self.reason or (
-            "held terminals are turned off (TERMX_PTY_HOLDER or the host setting)" if requested == "direct" else
-            "no holder is running yet; it starts with the first terminal"
-        )
+        out["reason"] = self.reason or ("held terminals are turned off (TERMX_PTY_HOLDER or the host setting)" if requested == "direct" else None)
         if requested != "direct" and self.reason is None:
-            out["mode"] = "held"  # will start on first use
+            out["mode"] = "held"  # no holder yet: it starts with the first terminal (``running`` is false until then)
         return out
 
     def close(self) -> None:
