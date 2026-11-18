@@ -19,9 +19,12 @@ from termx.graphql.errors import fail, to_graphql_error
 from termx.graphql import types as T
 from termx.workspace.public_events import context_task_events
 from termx.cli_sessions.gql import CliSessionEvent
+from termx.graphql.domains.host_status import HostStatus
 from termx.cli_sessions.status import ENDED as ENDED_STATUSES
 
 CLI_POLL_SECONDS = 1.0
+HOST_STATUS_POLL_SECONDS = 2.0
+HOST_STATUS_KEEPALIVE_SECONDS = 30.0
 
 Ctx = Info[TermxContext, None]
 
@@ -49,6 +52,28 @@ class Subscription:
                 yield T.ActivityEvent.wrap({"type": "activity.remove", "id": item_id})
             last = current
             await asyncio.sleep(2.0)
+
+    @strawberry.subscription
+    async def host_status_events(self, info: Ctx) -> AsyncGenerator[HostStatus, None]:
+        """The host's health: one snapshot on connect, then one whenever something other than uptime changes
+        (and every 30 s so uptime and the heartbeat age stay fresh). Scope re-checked on every poll."""
+        from termx.graphql.domains.host_status import host_status_service
+        from termx.host_status import stable_view
+
+        ctx = info.context
+        ctx.require_host("machine-view")
+        service = host_status_service(ctx)
+        last_view: dict | None = None
+        last_sent = 0.0
+        while True:
+            ctx.require_host("machine-view")  # authority can change while the socket is open
+            snapshot = await asyncio.to_thread(service.snapshot)
+            view = stable_view(snapshot)
+            now = asyncio.get_running_loop().time()
+            if view != last_view or now - last_sent >= HOST_STATUS_KEEPALIVE_SECONDS:
+                last_view, last_sent = view, now
+                yield HostStatus.wrap(snapshot)
+            await asyncio.sleep(HOST_STATUS_POLL_SECONDS)
 
     @strawberry.subscription
     async def cli_session_events(self, info: Ctx) -> AsyncGenerator[CliSessionEvent, None]:
