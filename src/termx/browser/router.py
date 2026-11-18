@@ -7,7 +7,7 @@ import secrets
 from pathlib import Path
 from time import time
 from typing import Literal
-from fastapi import APIRouter,Request,WebSocket,WebSocketDisconnect,HTTPException
+from fastapi import APIRouter,Request,WebSocket,WebSocketDisconnect,HTTPException,Query
 from fastapi.routing import APIRoute
 from fastapi.responses import Response,FileResponse,JSONResponse
 from pydantic import BaseModel,ConfigDict,Field
@@ -30,12 +30,21 @@ class Route(APIRoute):
             except ValueError as exc:return JSONResponse({'error':str(exc)},status_code=400)
         return safe
 class Body(BaseModel):model_config=ConfigDict(extra='forbid')
+def principal_for(state,token):
+    """The browser principal behind a credential; the same mapping the routes' identity gate uses."""
+    session=state.identity.resolve(token)
+    return session.principal.id if session else 'legacy-'+hashlib.sha256((token or 'trusted-loopback').encode()).hexdigest()[:24]
 class ProfileBody(Body):
     project_id:str='';name:str=Field(min_length=1,max_length=100);ephemeral:bool=False
 class TabBody(Body):profile_id:str;url:str='about:blank'
 class HandoffBody(Body):
     run_id:str;origins:list[str];actions:list[str];expires_in:int=600
 class TakeoverBody(Body):private:bool=False
+class SiteBody(Body):
+    profile_id:str;url:str=Field(min_length=1,max_length=2048);title:str=Field(default='',max_length=200);open_mode:Literal['tab','app']='tab';pinned:bool=True
+class SitePatchBody(Body):
+    title:str|None=Field(default=None,min_length=1,max_length=200);open_mode:Literal['tab','app']|None=None;pinned:bool|None=None;position:int|None=Field(default=None,ge=0,le=100000);start_url:str|None=Field(default=None,max_length=2048)
+class SiteNoteBody(Body):content:str=Field(min_length=1,max_length=2000)
 class HumanBody(Body):action:str;args:dict=Field(default_factory=dict)
 class AgentBody(Body):
     action_id:str;grant_id:str;run_id:str;action:str;args:dict=Field(default_factory=dict);document_revision:int;lease_revision:int
@@ -132,6 +141,49 @@ def browser_router(state):
     async def clear_profile(id:str,request:Request):
         _,principal,_=identity(request,'desktop-control','browser-profile',id)
         return await service.clear_profile(id,principal)
+    def site_identity(request,id,scope):
+        token,principal,session=identity(request,scope)
+        site=service.site(id,principal)
+        identity(request,scope,'browser-profile',site['profile_id'],site['project_id'] or None)
+        return token,principal,session,site
+    @router.get('/sites')
+    async def sites(request:Request,profile_id:str|None=None,pinned:bool|None=None):
+        return service.sites(identity(request)[1],profile_id=profile_id,pinned=pinned)
+    @router.post('/sites')
+    async def save_site(request:Request,body:SiteBody):
+        _,principal,_=identity(request,'desktop-control')
+        profile=service.records.get('profile',body.profile_id)
+        if not profile or profile['principal_id']!=principal:raise KeyError('profile')
+        identity(request,'desktop-control','browser-profile',body.profile_id,profile['project_id'] or None)
+        return service.save_site(principal,body.profile_id,body.url,title=body.title,open_mode=body.open_mode,pinned=body.pinned)
+    @router.get('/sites/suggestions')
+    async def site_suggestions(request:Request,limit:int=Query(5,ge=1,le=50)):
+        return service.suggestions(identity(request)[1],limit)
+    @router.patch('/sites/{id}')
+    async def update_site(id:str,request:Request,body:SitePatchBody):
+        _,principal,_,_=site_identity(request,id,'desktop-control')
+        return service.update_site(id,principal,**body.model_dump(exclude_unset=True))
+    @router.delete('/sites/{id}')
+    async def remove_site(id:str,request:Request):
+        _,principal,_,_=site_identity(request,id,'desktop-control')
+        return service.remove_site(id,principal)
+    @router.post('/sites/{id}/open')
+    async def open_site(id:str,request:Request):
+        token,principal,session,_=site_identity(request,id,'desktop-control')
+        value=await service.open_site(id,principal,session)
+        claim(token,'browser-tab',value['tab']['id'],value['tab']['project_id']);return value
+    @router.get('/sites/{id}/notes')
+    async def site_notes(id:str,request:Request):
+        _,principal,_,_=site_identity(request,id,'desktop-view')
+        return service.site_notes(id,principal)
+    @router.post('/sites/{id}/notes')
+    async def write_site_note(id:str,request:Request,body:SiteNoteBody):
+        _,principal,_,_=site_identity(request,id,'desktop-control')
+        return service.write_site_note(id,principal,body.content,author='user')
+    @router.delete('/sites/{id}/notes')
+    async def delete_site_note(id:str,request:Request,note_id:str=Query(min_length=1,max_length=128)):
+        _,principal,_,_=site_identity(request,id,'desktop-control')
+        return service.delete_site_note(id,principal,note_id)
     @router.get('/tabs')
     async def tabs(request:Request):return service.tabs(identity(request)[1])
     @router.post('/tabs')

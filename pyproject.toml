@@ -24,6 +24,7 @@ dependencies = [
     "strawberry-graphql[fastapi]>=0.312.0",
     "playwright==1.58.0",
     "tzdata>=2026.2; sys_platform == 'win32'",
+    "anthropic>=1,<2",
     "boto3>=1.40,<2",
     "numpy>=2.3",
     "quickjs-ng==0.18.0.1",

@@ -82,7 +82,11 @@ class AppState:
         from termx.authorization import AuthorizationService
         self.authorization = AuthorizationService(self.identity, self.auth)
         self.store = ConfigStore()
-        self.sessions = SessionManager()
+        from termx.host_status import HostStatusService
+        from termx.pty_holder_client import HolderSupervisor
+        # Terminals live in a detached PTY holder when it can run (survive a restart); the supervisor records why when not.
+        self.sessions = SessionManager(holder=HolderSupervisor(setting=lambda: self.store.get().host.pty_holder))
+        self.host_status = HostStatusService(self)
         # A saved workspace is only a cold-start recovery plan. It is never a
         # per-client session factory, so concurrent reconnects must serialize
         # the check-and-restore sequence.
@@ -317,6 +321,9 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     async def lifespan(_app: FastAPI):
         state.forwards.start_auto()
         state.engines.recover()
+        # Re-adopt terminals and CLI sessions the previous daemon left running in the PTY holder, then start the
+        # heartbeat and keep-awake policy.
+        await state.host_status.start()
         if os.environ.get("TERMX_ENGINE_STARTUP_REFRESH", "1") != "0":
             state.engines.catalogue.start()
             async def refresh_engine_catalogues() -> None:
@@ -350,6 +357,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             # Discovery only: failures keep the saved catalog and set catalog_error.
             state.agent.catalogue.start()
         yield
+        await state.cli_sessions.close()
+        await state.host_status.close()
         await state.data_studio.close()
         await state.studio.close()
         await state.push.close()
@@ -393,6 +402,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_workspace(app, state)
     from termx.host_service_http import mount_host_service
     mount_host_service(app, state)
+    from termx.cli_sessions.http import mount_cli_sessions
+    mount_cli_sessions(app, state)
     from termx.mcp.task_broker import McpTaskBroker
     state.agent.mcp = McpTaskBroker(state)
     from termx.workspace.prompt_queue_http import mount_prompt_queue

@@ -4,11 +4,12 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 from urllib.parse import urlsplit
 
 import httpx
 
+from termx.agent import anthropic_wire
 from termx.agent.chat_wire import ChatStream, chat_tools, messages_from_items, response_from_chat
 from termx.agent.policy import redact
 
@@ -134,13 +135,10 @@ class OpenAIResponsesAdapter:
         list models at all.
         """
         if not billed:
-            from termx.agent.discovery import discover_models, model_listed
+            from termx.agent.discovery import model_listed
 
             try:
-                models = await discover_models(
-                    {"base_url": self.base_url}, self.api_key, client=self.client,
-                    timeout_s=min(self.timeout_s, 15.0) if self.timeout_s is not None else 15.0,
-                )
+                models = await self._list_models(min(self.timeout_s, 15.0) if self.timeout_s is not None else 15.0)
             except ProviderError as exc:
                 if exc.status_code not in {404, 405, 501}:
                     raise  # a bad key, outage, rate limit or bad body must not spend money
@@ -153,6 +151,11 @@ class OpenAIResponsesAdapter:
                     )
                 return f"Connected. {len(models)} model{'s' if len(models) != 1 else ''} available."
         return await self._billed_test()
+
+    async def _list_models(self, timeout_s: float) -> dict[str, dict[str, Any]]:
+        from termx.agent.discovery import discover_models
+
+        return await discover_models({"base_url": self.base_url}, self.api_key, client=self.client, timeout_s=timeout_s)
 
     async def _billed_test(self) -> str:
         body = await self._post(
@@ -271,6 +274,7 @@ class OpenAIResponsesAdapter:
         message_recipients: list[dict[str, str]] | None = None,
         allowed_tools: list[str] | None = None,
     ) -> dict[str, Any]:
+        input_items = self._replay_items(input_items)
         tools: list[dict[str, Any]] = []
         if {"functions", "shell", "computer"} & self.capabilities:
             # The legacy `computer` capability counts as function tools. Desktop control needs function tools, not vision.
@@ -316,6 +320,12 @@ class OpenAIResponsesAdapter:
         else:
             payload["input"] = _task_input(prompt, cwd, manifest)
         return payload
+
+    def _replay_items(self, items: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """History as this wire can replay it. Items another provider's wire produced (thinking blocks) are dropped."""
+        if not items:
+            return items
+        return [item for item in items if not (isinstance(item, dict) and item.get("type") in anthropic_wire.ITEM_TYPES)]
 
     @staticmethod
     def _turn_from_body(body: dict[str, Any]) -> ProviderTurn:
@@ -542,6 +552,256 @@ class OpenAIChatAdapter(OpenAIResponsesAdapter):
         return _responses_body(stream.body())
 
 
+# Anthropic Messages --------------------------------------------------------
+
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+# Seeded when an Anthropic account is saved without models. The first is the default.
+ANTHROPIC_MODELS = ("claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5")
+DEFAULT_EFFORT = "high"
+# Streaming leaves room for long output; 64K is within every current model's cap.
+DEFAULT_MAX_TOKENS = 64_000
+BINDING_BETA = "thinking-binding-controls-2026-08-01"
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+MAX_PAUSE_RESUMES = 3
+# Models that take adaptive thinking and ``output_config.effort`` (older ones need a thinking budget).
+_ADAPTIVE_MODELS = re.compile(r"^claude-(?:(?:fable|mythos)-5|opus-(?:5|4-[678])|sonnet-(?:5|4-6)|haiku-5)(?:-\d+)?$")
+# Models whose refusals the API can re-run on a fallback model inside the same call.
+_FALLBACK_MODELS = re.compile(r"^claude-(?:fable-5(?:-[12])?|opus-5(?:-5)?|sonnet-5-5)$")
+_BINDING_ERROR = re.compile(r"signature|block_binding|bound to a different conversation|anthropic-beta|fallbacks", re.I)
+_STREAM_ERROR_STATUS = {"overloaded_error": 529, "api_error": 500, "rate_limit_error": 429}
+
+
+def anthropic_base_url(url: str) -> str:
+    """The origin the SDK appends ``/v1/messages`` to; a pasted ``.../v1`` or full endpoint URL is accepted."""
+    base = url.strip().rstrip("/")
+    for suffix in ("/v1/messages", "/messages", "/v1"):
+        base = base.removesuffix(suffix)
+    return base or ANTHROPIC_BASE_URL
+
+
+def make_anthropic_client(base_url: str, api_key: str, timeout_s: float | None = None) -> Any:
+    """An SDK client that owns its own connection pool and never retries on its own.
+
+    The key is always passed explicitly (even when empty) so the SDK never falls back to ambient
+    credentials from the environment or an ``ant`` profile. Retries belong to ``retry.retrying``.
+    """
+    import anthropic
+
+    return anthropic.AsyncAnthropic(
+        api_key=api_key, base_url=anthropic_base_url(base_url), max_retries=0,
+        timeout=anthropic.not_given if timeout_s is None else timeout_s,
+    )
+
+
+class AnthropicMessagesAdapter(OpenAIResponsesAdapter):
+    """Native Anthropic Messages API: streaming, tool use, prompt caching and adaptive thinking.
+
+    Like the chat adapter, every request is built as a Responses payload first (instructions, tool
+    selection and plan mode stay identical to the parent) and translated to a Messages request at the
+    transport seam; the reply is translated back to a Responses-shaped body, so the manager's history,
+    ``test()``, ``plan()`` and the streaming callbacks are unchanged.
+
+    The system prompt and the tool list carry a cache breakpoint and the request asks for automatic
+    caching of the growing conversation. Thinking blocks come back as opaque ``thinking`` items and are
+    replayed in place. On api.anthropic.com the request also asks the API to drop (not fail on) a
+    thinking block whose conversation prefix changed, and to re-run refused requests on a fallback model.
+    """
+
+    def __init__(self, *, base_url: str = ANTHROPIC_BASE_URL, sdk: Any = None, effort: str = DEFAULT_EFFORT,
+                 **kwargs: Any) -> None:
+        super().__init__(base_url=anthropic_base_url(base_url), **kwargs)
+        self.url = f"{self.base_url}/v1/messages"
+        self.effort = effort
+        self.sdk = sdk if sdk is not None else make_anthropic_client(self.base_url, self.api_key, self.timeout_s)
+        self.first_party = (urlsplit(self.base_url).hostname or "").lower() == "api.anthropic.com"
+
+    def _replay_items(self, items: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        return items  # thinking blocks are replayed in place
+
+    def _turn_payload(self, **kwargs: Any) -> dict[str, Any]:
+        # There is no server-side response chaining: the local transcript is the history.
+        kwargs["previous_response_id"] = None
+        return super()._turn_payload(**kwargs)
+
+    # Request ----------------------------------------------------------
+
+    def _request(self, payload: dict[str, Any], *, effort: str | None = None) -> dict[str, Any]:
+        items = payload["input"]
+        request: dict[str, Any] = {
+            "model": payload["model"],
+            "max_tokens": payload.get("max_output_tokens") or DEFAULT_MAX_TOKENS,
+            "messages": anthropic_wire.messages_from_items([{"role": "user", "content": items}] if isinstance(items, str) else items),
+            # Caches the conversation up to its newest block; the system breakpoint below keeps tools + system warm
+            # when only the tail changes.
+            "cache_control": {"type": "ephemeral"},
+        }
+        if payload.get("instructions"):
+            request["system"] = [{"type": "text", "text": payload["instructions"], "cache_control": {"type": "ephemeral"}}]
+        if payload.get("tools"):
+            request["tools"] = anthropic_wire.anthropic_tools(payload["tools"])
+        if _ADAPTIVE_MODELS.match(str(payload["model"])):
+            # No budget_tokens, sampling parameters or forced tool_choice: current models reject them.
+            request["thinking"] = {"type": "adaptive"}
+            request["output_config"] = {"effort": effort or self.effort}
+        return request
+
+    def _with_controls(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Beta-only controls, sent to api.anthropic.com only (a proxy may not know them)."""
+        if not self.first_party:
+            return request
+        betas: list[str] = []
+        request = dict(request)
+        if "thinking" in request:
+            request["thinking"] = {**request["thinking"], "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+            betas.append(BINDING_BETA)
+        if _FALLBACK_MODELS.match(str(request["model"])):
+            request["fallbacks"] = "default"
+            betas.append(FALLBACK_BETA)
+        return {**request, "betas": betas} if betas else request
+
+    # Transport --------------------------------------------------------
+
+    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._run(payload)
+
+    async def _post_stream(self, payload: dict[str, Any], *, on_delta: Any = None, on_event: Any = None) -> dict[str, Any]:
+        return await self._run(payload, on_delta=on_delta, on_event=on_event)
+
+    async def _billed_test(self) -> str:
+        body = await self._run({"model": self.model, "input": "Reply with only OK.", "max_output_tokens": 1024},
+                               effort="low", check_complete=False)
+        return _output_text(body) or "Connected"
+
+    async def _list_models(self, timeout_s: float) -> dict[str, dict[str, Any]]:
+        from termx.agent.discovery import discover_anthropic
+
+        return await discover_anthropic(self.sdk, timeout_s=timeout_s)
+
+    async def _run(self, payload: dict[str, Any], *, on_delta: Any = None, on_event: Any = None,
+                   effort: str | None = None, check_complete: bool = True) -> dict[str, Any]:
+        if not self.api_key:
+            raise ProviderError("This provider has no API key. Add one in Settings.", status_code=401)
+        request = self._request(payload, effort=effort)
+        compat = False
+        body: dict[str, Any] | None = None
+        resumes = 0
+        while True:
+            kwargs = request if compat else self._with_controls(request)
+            try:
+                message, raw_inputs = await self._stream_message(kwargs, on_delta, on_event)
+            except Exception as exc:
+                if not compat and self.first_party and _binding_rejected(exc):
+                    # The API refused the beta controls or a replayed thinking block: send the plain request
+                    # once, without the thinking blocks, rather than failing the turn.
+                    compat = True
+                    request = {**request, "messages": _without_thinking(request["messages"])}
+                    continue
+                # The SDK error quotes the response body: keep it out of the chain so a logged traceback cannot leak it.
+                raise _anthropic_error(exc) from None
+            try:
+                part = anthropic_wire.response_from_message(message, raw_inputs)
+            except ValueError as exc:
+                # Retryable only while nothing has streamed to the user (see retry.retrying).
+                raise ProviderError(f"{exc}. Retry this request.", network=True) from exc
+            dropped = sum(1 for item in message.get("input_transformations") or []
+                          if isinstance(item, dict) and item.get("type") == "thinking_dropped")
+            if dropped:
+                part["usage"]["thinking_blocks_dropped"] = dropped
+            body = part if body is None else _merge_bodies(body, part)
+            if message.get("stop_reason") != "pause_turn" or resumes >= MAX_PAUSE_RESUMES:
+                break
+            resumes += 1
+            request = {**request, "messages": [*request["messages"], {
+                "role": "assistant", "content": anthropic_wire.assistant_blocks(part["output"])}]}
+        assert body is not None  # the loop ran at least once
+        if message.get("stop_reason") == "refusal":
+            raise ProviderError(_refusal_text(message.get("stop_details")))
+        if message.get("stop_reason") == "pause_turn":
+            raise ProviderError("Provider paused the response too many times")
+        if not check_complete and body["status"] == "incomplete":
+            body["status"] = "completed"
+        return body
+
+    async def _stream_message(self, kwargs: dict[str, Any], on_delta: Any, on_event: Any) -> tuple[dict[str, Any], dict[int, str]]:
+        api = self.sdk.beta.messages if "betas" in kwargs or "fallbacks" in kwargs else self.sdk.messages
+        tool_ids: dict[int, str] = {}
+        raw: dict[int, list[str]] = {}
+        async with api.stream(**kwargs) as stream:
+            async for event in stream:
+                kind = getattr(event, "type", "")
+                if kind == "content_block_start" and getattr(event.content_block, "type", "") == "tool_use":
+                    tool_ids[event.index] = event.content_block.id
+                elif kind == "content_block_delta":
+                    delta = event.delta
+                    if delta.type == "text_delta" and delta.text:
+                        if on_delta is not None:
+                            on_delta(delta.text)
+                    elif delta.type == "input_json_delta":
+                        raw.setdefault(event.index, []).append(delta.partial_json)
+                        if on_event is not None:
+                            on_event("response.function_call_arguments.delta",
+                                     {"call_id": tool_ids.get(event.index, ""), "delta": delta.partial_json})
+            final = await stream.get_final_message()
+        message = final.model_dump(mode="json", by_alias=True, exclude_none=True)
+        return message, {index: "".join(parts) for index, parts in raw.items()}
+
+
+def _binding_rejected(exc: Exception) -> bool:
+    import anthropic
+
+    return isinstance(exc, anthropic.BadRequestError) and bool(_BINDING_ERROR.search(str(exc.message)))
+
+
+def _without_thinking(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for message in messages:
+        content = message["content"]
+        if message["role"] == "assistant" and isinstance(content, list):
+            content = [block for block in content if block.get("type") not in anthropic_wire.THINKING_TYPES]
+            if not content:
+                continue
+            message = {**message, "content": content}
+        out.append(message)
+    return out
+
+
+def _merge_bodies(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    """One body for a turn the API paused and this adapter resumed: outputs joined, token counts added."""
+    usage = dict(first["usage"])
+    for key, value in second["usage"].items():
+        if isinstance(value, int):
+            usage[key] = usage.get(key, 0) + value
+    return {**second, "output": [*first["output"], *second["output"]], "usage": usage}
+
+
+def _refusal_text(details: Any) -> str:
+    category = details.get("category") if isinstance(details, dict) else None
+    label = f" ({category})" if isinstance(category, str) and re.fullmatch(r"[\w-]{1,40}", category) else ""
+    return f"The model declined this request{label}. Rephrase the task or choose another model."
+
+
+def _anthropic_error(exc: Exception) -> ProviderError:
+    """Map an SDK exception to the repo's ``ProviderError`` conventions without echoing secrets."""
+    import anthropic
+
+    if isinstance(exc, ProviderError):
+        return exc
+    if isinstance(exc, anthropic.APIStatusError):
+        status = exc.status_code
+        if status < 400:
+            # An error event inside a 200 stream: the type says how it should be retried.
+            status = _STREAM_ERROR_STATUS.get(str(exc.type), 0) or None
+        error = exc.body.get("error") if isinstance(exc.body, dict) else None
+        detail = json.dumps({"error": {"message": error.get("message")}}) if isinstance(error, dict) else ""
+        retry_after = _retry_after(exc.response.headers)
+        if status is None:
+            return ProviderError(f"Provider stream failed ({exc.type or 'error'})", retry_after_s=retry_after)
+        return ProviderError(_provider_http_error(status, detail), status_code=status, retry_after_s=retry_after)
+    if isinstance(exc, anthropic.APIConnectionError):
+        return ProviderError(f"Could not reach provider ({type(exc).__name__})", network=True)
+    return ProviderError("Provider returned an invalid response")
+
+
 def _responses_body(chat_body: dict[str, Any]) -> dict[str, Any]:
     try:
         return response_from_chat(chat_body)
@@ -597,7 +857,7 @@ def _redact_value(value: Any) -> Any:
     return value
 
 
-def _retry_after(headers: httpx.Headers) -> float | None:
+def _retry_after(headers: Mapping[str, str]) -> float | None:
     value = headers.get("retry-after")
     if not value:
         return None

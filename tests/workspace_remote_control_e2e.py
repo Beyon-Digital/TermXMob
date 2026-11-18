@@ -27,12 +27,14 @@ def run(destination):
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
     report={'proof':'independent-clients-live-authenticated-http-websocket','transport':'loopback','provider':'deterministic-no-network-fixture','external_phone_tested':False,'wan_tested':False,'paid_model_calls':0,'checks':[]}
     with tempfile.TemporaryDirectory(prefix='termx-remote-proof-') as temporary:
-        root=Path(temporary);os.environ.update(TERMX_CONFIG_DIR=str(root/'config'),TERMX_AGENTS_DIR=str(root/'agents'),TERMX_ENGINE_STARTUP_REFRESH='0')
+        root=Path(temporary).resolve();os.environ.update(TERMX_CONFIG_DIR=str(root/'config'),TERMX_AGENTS_DIR=str(root/'agents'),TERMX_ENGINE_STARTUP_REFRESH='0')
         from termx.app import AppState,create_app
         adapter=Adapter();state=AppState(passcode=None,credentials=CredentialStore(memory={}),adapter_factory=lambda *_:adapter)
         owner=state.identity.setup_owner('remote-owner','remote-fixture-password-123');state.identity.create_local_user('foreign-user','foreign-fixture-password-123',list(SCOPES));folder=root/'project';folder.mkdir();(folder/'read.txt').write_text('Remote fixture only\n');project=state.projects.register(str(folder),name='Remote proof')
         state.agent.save_provider(provider_id='fixture',kind='openai-compatible',name='No-network remote fixture',base_url='http://127.0.0.1:1/v1',model='fixture',capabilities=['shell'],api_key='fixture-not-a-provider-key')
         app=create_app(state)
+        from cli_fake import write_fake_cli
+        state.cli_sessions._executables={'claude':write_fake_cli(root/'bin')};state.cli_sessions.tick=.1;state.cli_sessions.thresholds={'quiet_after':.5,'idle_after':3.0,'sustain':.6};state.cli_sessions.grace=(.6,.6)
         session=state.workspace.create_session(owner,title='Remote independent-client proof',project_id=project['id'],cwd=str(folder),provider_id='fixture',model='fixture',mode='agent')
         listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1];base=f'http://127.0.0.1:{port}';wsbase=f'ws://127.0.0.1:{port}';host=uvicorn.Server(uvicorn.Config(app,log_level='error',lifespan='on'));worker=threading.Thread(target=lambda:asyncio.run(host.serve(sockets=[listener])),daemon=True);worker.start();deadline=monotonic()+30
         while not host.started:
@@ -101,6 +103,43 @@ def run(destination):
                     assert terminal_denied
                     destroyed=await reconnect.post('/graphql',json={'query':'mutation($id:String!){delete_session(session_id:$id){ok}}','variables':{'id':terminal_id}});assert destroyed.json()['data']['delete_session']['ok'];report['checks'].append('Real Bash PTY executes only fixture-local writes, survives WebSocket disconnect/reconnect with shell environment and replay intact, rejects foreign ownership, and closes through authorized API')
                     report['terminal']={'actual_shell':'/bin/bash','isolated_fixture_file':True,'reconnected_environment':'retained','foreign_socket_rejected':True,'destroyed_via_api':True}
+                    # CLI session steered remotely: a second client types into it over REST while the first client's subscription
+                    # reports the status change; another user and an anonymous client reach nothing.
+                    async def cli_events(token):
+                        ws=await websockets.connect(wsbase+'/graphql',subprotocols=['graphql-transport-ws']);await ws.send(json.dumps({'type':'connection_init','payload':{'authorization':'Bearer '+token}}));assert json.loads(await asyncio.wait_for(ws.recv(),5))['type']=='connection_ack'
+                        await ws.send(json.dumps({'id':'cli','type':'subscribe','payload':{'query':'subscription{cli_session_events{type session{id status status_source attention pty_session_id}}}'}}));return ws
+                    async def cli_event(ws,predicate):
+                        for _ in range(400):
+                            value=json.loads(await asyncio.wait_for(ws.recv(),8))
+                            assert value['type']=='next',value
+                            row=value['payload']['data']['cli_session_events']
+                            if predicate(row):return row
+                        raise AssertionError('Expected CLI session event missing')
+                    made=await reconnect.post('/api/cli-sessions',json={'cli':'claude','project_id':project['id'],'title':'Remote steer proof'});assert made.status_code==201,made.text;cli=made.json()
+                    cli_ws=await cli_events(first['access_token'])
+                    assert (await cli_event(cli_ws,lambda row:row['type']=='cli.session.created' and row['session']['id']==cli['id']))['session']['id']==cli['id']
+                    await settle(lambda:state.cli_sessions.get(owner.id,cli['id'])['status']=='waiting_input')
+                    async with httpx.AsyncClient(base_url=base,timeout=20) as steerer:
+                        await login(steerer,'remote-owner','remote-fixture-password-123')
+                        for client,expected in [(anonymous,{401}),(foreign,{403,404})]:
+                            for method,path,payload in [('GET','',None),('POST','/input',{'text':'Denied'}),('POST','/interrupt',None),('POST','/stop',None)]:
+                                denied=await client.request(method,'/api/cli-sessions/'+cli['id']+path,json=payload);assert denied.status_code in expected,(path,denied.status_code,denied.text)
+                        assert (await foreign.get('/api/cli-sessions')).json()=={'sessions':[]}
+                        sent=await steerer.post('/api/cli-sessions/'+cli['id']+'/input',json={'text':'ping'});assert sent.status_code==200,sent.text
+                        changed=await cli_event(cli_ws,lambda row:row['type']=='cli.session.status' and row['session']['id']==cli['id'] and row['session']['status']=='working')
+                        await settle(lambda:'ECHO:ping' in state.cli_sessions.read(owner.id,cli['id'])['text'])
+                        await cli_event(cli_ws,lambda row:row['type']=='cli.session.status' and row['session']['id']==cli['id'] and row['session']['status']=='waiting_input')
+                        pty_socket=False
+                        try:
+                            async with websockets.connect(wsbase+'/api/sessions/'+cli['pty_session_id']+'/pty',additional_headers={'Authorization':'Bearer '+alien['access_token']}):pass
+                        except websockets.exceptions.InvalidStatus as error:pty_socket=error.response.status_code==403
+                        assert pty_socket
+                        stopped=await steerer.post('/api/cli-sessions/'+cli['id']+'/stop');assert stopped.status_code==200 and stopped.json()['status']=='done',stopped.text
+                        await cli_event(cli_ws,lambda row:row['type']=='cli.session.exited' and row['session']['id']==cli['id'])
+                    await cli_ws.close()
+                    assert not [row for row in state.sessions.list() if row.id==cli['pty_session_id'] and not row.exited]
+                    report['checks'].append('A second client steers a live CLI session over REST: the first client subscription reports working then waiting_input then exited; another user and an anonymous client are rejected on every CLI route and on its PTY socket')
+                    report['cli_session']={'steered_by_second_client':True,'status_event_received':changed['session']['status'],'foreign_and_anonymous_rejected':True,'stopped_via_rest':True}
 
                 async with httpx.AsyncClient(base_url=base,timeout=20) as cookie_client:
                     response=await cookie_client.post('/auth/login',headers={'Origin':base},json={'username':'remote-owner','password':'remote-fixture-password-123','transport':'cookie'});assert response.status_code==200,response.text;csrf=response.json()['csrf_token']

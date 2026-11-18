@@ -32,6 +32,65 @@ to a fixed loopback port. The desktop verifies a private challenge and the exact
 profile/process identity before attaching. A stopped background service is not
 silently restarted when the desktop is reopened.
 
+## Always-on host: durable terminals, keep-awake and health
+
+Three things make a TermX host safe to leave running.
+
+**Terminals and CLI sessions survive a host restart.** Terminals are owned by a small
+detached helper, the *PTY holder*, not by the host. Stop, restart, update or crash the host
+(even `kill -9`) and the shells, `claude`/`codex` sessions and everything they run keep
+going; the new host re-attaches with each terminal's recent output (256 KB per session)
+intact, including what was printed while no host was running. Held mode is the default
+on macOS and Linux (`TERMX_PTY_HOLDER=auto|held|direct`, or the saved host setting
+`pty_holder`; the variable wins). What to know:
+
+- The holder is a separate process per config directory (`termx pty-holder status` shows
+  it; `termx pty-holder stop` drains it, `stop --kill` also ends every held terminal, which
+  is the only thing that does). It exits by itself after 10 idle minutes with no terminal and
+  no host (`TERMX_PTY_HOLDER_IDLE_S`). Quitting the app or stopping the service therefore does
+  **not** end a running terminal; close it in the app or use `pty-holder stop --kill`.
+- It is reachable only through a Unix socket in a private (0700) directory, checked on both
+  ends against the owning user (`SO_PEERCRED` / `LOCAL_PEERCRED`); frames are length-prefixed
+  with per-type size limits and JSON control messages, no pickle. It execs exactly the argv
+  and environment the host hands it. A sandboxed terminal's wrapper and environment are built
+  by the host first, so the holder can never loosen a sandbox. It logs ids and exit codes only,
+  never terminal content (`pty-holder/holder.log`).
+- If the holder cannot start (or on Windows) terminals fall back to *direct* mode and the host
+  says so: `host_status.holder.reason`, a one-time warning notification and the audit log. With
+  `pty_holder: held` it refuses to start a terminal instead of falling back. Direct terminals end
+  with the host (`holder.direct_terminals` counts them).
+- A holder from an older TermX build with nothing running is replaced on the next start; one that
+  still owns sessions keeps serving them while it is compatible, and an incompatible one is drained
+  (no new sessions, new terminals are direct, with the reason shown) until it empties.
+- The supervisor definitions keep the holder out of reach of a stop or restart: the systemd unit
+  uses `KillMode=process` and the launchd job `AbandonProcessGroup`. (systemd will note leftover
+  processes in the unit's cgroup after a stop; that is the holder.) A host that was started by hand
+  or by the desktop app is covered by the holder's own session and process group.
+- A restarted host must listen on the same port: a surviving CLI keeps posting its status hook
+  to the port it was started with. A service uses a fixed port; if a plain host starts on a
+  different one, hooks are quiet and the output heuristics take over.
+
+**The machine stays awake while work runs.** A refcounted lease holds the OS's idle-sleep
+inhibitor (`caffeinate -i -w <host pid>` on macOS, `systemd-inhibit` around a watcher on Linux,
+`SetThreadExecutionState` on Windows) while an agent task is running, a CLI session is working, or
+the owner turned on **keep awake** (`update_host_settings(keep_awake: true)`, needs `host-admin`).
+The inhibitor is tied to the host process, so a crash releases it. The display may still sleep.
+`host_status.keep_awake` shows whether it is held, why, and any error (`supported: false` where the
+OS offers no mechanism).
+
+**Health.** `host_status` (query) and `host_status_events` (subscription, snake_case, `machine-view`;
+a managed principal also needs `host-admin`) report uptime, version, the service supervisor state,
+the holder (`mode`, `reason`, `sessions`, `direct_terminals`), recovery counts (recovering tasks, lost
+and resumable CLI/engine sessions), keep-awake state and the last heartbeat. The unauthenticated
+`health` query is unchanged. For watchdogs that cannot sign in, the host rewrites
+`<config dir>/heartbeat.json` every ~10 seconds (atomic replace; `pid`, `version`, `port`, `at`,
+`state` only): treat an `at` older than ~30 seconds as down.
+
+After a restart the host also resumes interrupted tasks as before (once, from the task ledger) and
+re-adopts CLI sessions ([cli-sessions.md](cli-sessions.md#after-a-host-restart)); native engine
+sessions are flagged `resumable` when their engine supports it, and a new instruction in the same
+conversation re-attaches them.
+
 ## Set up unattended work
 
 1. Configure an AI connection in **Settings → AI & Models** and select it in a
@@ -82,6 +141,17 @@ change; a named stable profile is preferable for a persistent remote address.
 including one still planning. **Revoke and stop runs** revokes unattended
 authority and cancels active work. Archiving retains history and does not stop an
 already active run.
+
+The scope each remote surface needs (REST, GraphQL operations and subscriptions, push
+notifications) is listed in the [remote access matrix](remote-access.md). No new scopes were
+added for CLI sessions, durable terminals, host health or task-graph executors.
+
+## Interactive CLI sessions
+
+The Main agent and remote clients can also run real coding CLIs (`claude`, `codex`,
+`gemini`, `aider`) as live terminal sessions with status, optional worktree isolation
+and steering. See [cli-sessions.md](cli-sessions.md) for statuses, the security model
+and the REST/event contract.
 
 ## Browser and computer tools
 
@@ -164,6 +234,90 @@ otherwise they overlap nowhere and the task is refused. A refusal emits
 `desktop.app_blocked`. Desktop time for a run is kept on the run's task, survives
 a restart, and ends the call that reaches it.
 
+### Saved sites
+
+Users and agents can pin frequently used sites. A saved site belongs to one user,
+one browser profile and one origin (`https://host[:port]`), opens as a normal
+`tab` or as an `app` (a persistent window that reopens at its last page after a
+host restart, lazily, because Chromium needs a live host), and keeps notes and a
+usage score. The score (frecency) is a visit count with a 14 day half-life; a
+browsing session counts once, queries and fragments are never stored, private
+tabs and temporary profiles leave no trace, and origins visited three or more
+times but not saved are offered as suggestions (the counter is bounded per user).
+Clearing a profile resets its usage and suggestions; deleting a profile removes
+its sites and notes.
+
+Routes under `/api/browser/sites` use the existing browser scopes: reads need
+`desktop-view`, writes and opening need `desktop-control`. `GET/POST /sites`,
+`PATCH/DELETE /sites/{id}`, `POST /sites/{id}/open` (returns `{site, tab, reused}`;
+the tab is human-owned), `GET/POST/DELETE /sites/{id}/notes` (delete takes
+`?note_id=`) and `GET /sites/suggestions`. The GraphQL subscription
+`browser_site_events` streams `browser.site.upserted`, `browser.site.visited` and
+`browser.site.removed` for the caller's sites.
+
+Agent tools: `browser_sites_list` and `browser_site_note_read` (read, no approval),
+`browser_site_pin` (write, policy), `browser_site_open` (asks, names the origin;
+the tab it opens grants the agent no control, so acting in it still needs the
+task handoff above) and `browser_site_note_write` (asks every time and shows the
+exact text; notes are capped at 2000 characters, 50 per site, refuse credentials,
+and are returned to agents marked as untrusted data). `BrowserService.on_visit`
+is an optional callback called once per counted visit with the user, project,
+profile, origin, title and query-free URL, for usage history.
+
+## Web, memory and usage tools
+
+These Internal-engine tools run in the host process, so they work with every
+provider and follow host policy.
+
+| Tool | What it does | Approval |
+| --- | --- | --- |
+| `web_fetch {url, max_chars}` | Reads one http(s) page as text (HTML is reduced to its visible text). | Per host, remembered like other rules. |
+| `web_search {query, limit}` | Returns titles, URLs and snippets from the configured search API. | Per backend host; the approval shows the query. |
+| `memory_read {query, limit}` | Ranks saved notes by relevance. | None. |
+| `usage_query {mode, kind, query, since, limit}` | Answers what the owner uses most (`top`), most recently (`recent`) or what matches some words (`search`). | None; read-only. |
+
+**Web tools.** Both need Agent mode (they are not offered in Ask mode, because a
+URL or query can carry data out) and ask before each new host. The approval names
+the capability `net.outbound:<host>` and remembers the host, so `docs.example.com`
+being allowed does not allow another host or another port. Bots deny
+`net.outbound:any` by default, which also stops these tools until the owner
+raises the ceiling. The sandbox profile does not limit them, and approving one
+never gives a sandboxed shell network access. Autonomous approval mode and Auto do
+not answer for the owner; only a remembered host rule does.
+
+Every request resolves the host once through the browser's `NetworkPolicy` and
+connects to that exact address, with TLS still verified against the name, so DNS
+rebinding cannot swap in a private address. Redirects are followed by hand and
+checked again at each hop (five at most). Private, loopback, link-local, multicast,
+reserved and cloud-metadata destinations (including IPv4 addresses wrapped in
+IPv6), non-http(s) schemes, credentials in URLs, HTTPS-to-HTTP redirects, binary
+content and bodies over 2 MiB are refused. Proxy environment variables are
+ignored. The reply is marked `untrusted`, redacted and capped at 50,000 characters
+(20,000 by default); it is data, never instructions.
+
+`web_search` is hidden until a backend is configured. One backend is implemented,
+the Brave Search API. Store its key as the `web-search` credential or set
+`TERMX_AI_WEB_SEARCH_API_KEY` on the host. `TERMX_WEB_SEARCH_URL` points it at
+another endpoint (for example a compatible self-hosted service; that exact origin
+is then allowed even if it is private) and `TERMX_WEB_SEARCH_PROVIDER` selects the
+backend (`brave`). A new backend is a small class with `request()` and `parse()`
+registered in `BACKENDS` in `agent/tools/web.py`.
+
+**Memory recall.** `memory_read` ranks with SQLite FTS5 (bm25, word stems and
+prefixes) when a query is given, and falls back to the old substring match when
+the index is unavailable or finds nothing. The index only orders notes the agent
+could already read, so the agent, project and user scopes, excluded notes and
+unreviewed proposals behave as before. Databases from before the index are
+backfilled when they are opened.
+
+**Usage history.** `workspace/usage.py` keeps redacted events (`usage_events`,
+with an FTS index over the subject) for the owner: a finished task records its
+conversation title (or the first 80 characters of its redacted prompt) with
+counters, never the prompt, result or tool arguments. Events older than 180 days
+are dropped. Other features add events with `UsageHistory.record(owner, kind,
+subject, detail=..., project_id=...)`. `usage_query` sees the owner's events with
+no project plus those of the task's project.
+
 ## Restart behavior and live verification
 
 Schedule definitions, run reservations, task IDs and events are durable. Restart
@@ -175,13 +329,22 @@ engines follow their own supported session-resume contract.
 Live acceptance harnesses run actual hosts and network clients:
 
 - `tests/workspace_remote_control_e2e.py`: independent authenticated clients,
-  disconnect/reconnect, task teams, cancellation, revocation and real Bash PTY.
+  disconnect/reconnect, task teams, cancellation, revocation, real Bash PTY and a CLI session steered by a
+  second client over REST while the first client's subscription reports its status (fake CLI, no browser).
 - `tests/workspace_autonomy_e2e.py`: daemon scheduling and process restart with
   durable state and actual harmless command effects.
 - `tests/workspace_schedules_e2e.py`: rendered desktop schedule controls and
   execution while the browser is closed.
 - `tests/workspace_scheduled_browser_e2e.py`: actual managed Chromium execution
   after the initiating browser closes, without a per-run handoff.
+- `tests/workspace_cli_sessions_e2e.py`: a real host and sockets with a fake hook-capable
+  CLI (no browser): hook-driven status, the pty websocket, the event subscription and stop.
+- `tests/test_remote_scope_matrix.py`: every CLI, host-status and task-graph surface against its existing
+  scope (401/403/success, managed grants, cross-user isolation); `tests/test_push_delivery.py` and
+  `tests/test_push_event_sources.py`: the push kinds, their authority, limits and sources.
+- `tests/workspace_pty_restart_e2e.py`: real `termx` host processes stopped with SIGTERM and killed
+  with SIGKILL and replaced over the same config directory: the same shell process, the replay
+  (including output produced while no host ran), a CLI session and its status hook all survive.
 
 The harnesses explicitly identify scripted model adapters. They establish host
 and tool behavior, not successful model inference, external phone connectivity,
