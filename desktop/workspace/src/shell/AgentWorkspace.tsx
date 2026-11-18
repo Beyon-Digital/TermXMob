@@ -1,90 +1,61 @@
-import {lazy} from 'react';
-import {Button} from '../components/ui/button';
 import DockWorkspace from '../components/DockWorkspace';
-import OrchestratorStatus from '../features/OrchestratorStatus';
-import type {Project} from '../lib/api';
-import {contextItem, type IncomingContext} from '../lib/context';
-import type {DockGeometry, DockMap, DockPanel} from '../lib/docking';
-import type {useSessionChanges} from '../lib/session-changes';
+import {panelSurface, panels as dockPanels} from '../lib/docking';
+import type {WindowPanel} from '../lib/window-journal';
 import type {WorkspaceMode} from '../lib/workspace-mode';
+import {useAgentPanels, type AgentPanelProps} from './agent-panels';
+import type {LayoutController, LegacyController} from './layout-controller';
+import type {TabHost} from './tab-content';
+import TreeWorkspace from './TreeWorkspace';
 import {useAuth} from './AuthGate';
-import type {Coordination} from './use-coordination';
-import {useWorkspaceData} from './WorkspaceDataProvider';
 
-const Chat = lazy(() => import('../features/Chat'));
-const Workbench = lazy(() => import('../features/Workbench'));
-const ChangeReview = lazy(() => import('../features/ChangeReview'));
-const TerminalPanel = lazy(() => import('../features/TerminalPanel'));
-const BrowserSurface = lazy(() => import('../features/BrowserSurface'));
-const ComputerSurface = lazy(() => import('../features/ComputerSurface'));
-const Artifacts = lazy(() => import('../features/Media'));
-
-export type FileRequest = {id: number; sessionId: string; root: string; path: string; line?: number};
+export type {FileRequest} from './agent-panels';
 
 type Props = {
   workspace: WorkspaceMode;
   manager: string;
-  project: Project | null;
-  /** Panels that were ever shown stay mounted, so a terminal or an editor keeps its state when hidden. */
-  visited: Set<string>;
-  visiblePanels: DockPanel[];
-  onVisiblePanels: (panels: DockPanel[]) => void;
-  dock: DockMap;
-  onDockChange: (map: DockMap) => void;
-  right: boolean;
-  bottom: boolean;
-  rightWidth: number;
-  onRightWidth: (width: number) => void;
-  dockGeometry: DockGeometry;
-  onGeometry: (geometry: DockGeometry) => void;
-  onResizeStart: () => void;
-  panelActivation: {panel: DockPanel; nonce: number} | undefined;
+  /** What the panels need from the shell, whichever layout shows them. `bottom` is filled in from the layout. */
+  panels: Omit<AgentPanelProps, 'bottom'>;
+  layout: LayoutController;
   onFullscreen: () => void;
-  onDetach: (panel: DockPanel) => void;
-  fileRequest: FileRequest | null;
-  changesSource: ReturnType<typeof useSessionChanges>;
-  /** The running browser task, if any, for the Browser surface to follow. */
-  taskId: string | null;
-  incoming: IncomingContext | null;
-  onIncoming: (value: IncomingContext) => void;
-  mainState: 'loading' | 'ready' | 'failed';
-  primaryId: string;
-  onPrimary: (id: string) => void;
-  coordination: Coordination;
-  onAddProject: () => void;
-  onOpenConversation: (id: string) => void;
-  onOpenMainAgent: () => void;
-  onManager: (page: string) => void;
-  onOpenSurface: (surface: 'review' | 'browser' | 'terminal' | 'editor' | 'computer' | 'artifacts') => void;
-  onOpenFile: (path: string, line?: number) => void;
-  /** Show the conversation panel (opening the side panel) so attached context can be seen. */
-  onRevealConversation: () => void;
-  onShowChat: () => void;
-  onError: (reason: unknown) => void;
+  /** Open a surface in its own window. */
+  onDetach: (panel: WindowPanel) => void;
+  /** What the tab layout's Settings, Projects, Workflows, Data and Studio tabs need. Unused by the old dock. */
+  tabHost: Omit<TabHost, 'panel' | 'closeTab' | 'setDirty'>;
 };
 
-/** The Agent workspace: the dock of panels (Chat, Files, Changes, Terminal, Browser, Computer, Artifacts). */
+/**
+ * The Agent workspace. A small switch: the old dock of seven panels, or the tab-group layout. Both show the same panel
+ * components (`agent-panels.tsx`); they differ in where those sit.
+ */
 export default function AgentWorkspace(props: Props) {
-  const {workspace, manager, project, visited, visiblePanels, onVisiblePanels, dock, onDockChange} = props;
-  const {right, bottom, rightWidth, onRightWidth, dockGeometry, onGeometry, onResizeStart} = props;
-  const {panelActivation, onFullscreen, onDetach, fileRequest, changesSource, taskId, incoming} = props;
-  const {onIncoming, mainState, primaryId, onPrimary, coordination, onAddProject} = props;
-  const {onOpenConversation, onOpenMainAgent, onManager, onOpenSurface, onOpenFile} = props;
-  const {onRevealConversation, onShowChat} = props;
-  const {auth, authEpoch, locked} = useAuth();
-  const {
-    projects,
-    engines,
-    providers,
-    selected,
-    selection,
-    session,
-    setSession,
-    sessionCache,
-    workspaceActive,
-    refresh,
-  } = useWorkspaceData();
-  const report = props.onError;
+  const {layout, workspace} = props;
+  if (layout.engine === 'tree') {
+    return (
+      <TreeWorkspace
+        workspace={workspace}
+        tree={layout.tree}
+        panels={{...props.panels, bottom: layout.tree.layout.panel.visible}}
+        host={props.tabHost}
+        onDetach={props.onDetach}
+      />
+    );
+  }
+  return <DockedWorkspace {...props} layout={layout} />;
+}
+
+/** The old dock: Chat, Files, Changes, Terminal, Browser, Computer and Artifacts in regions. */
+function DockedWorkspace(props: Props & {layout: LegacyController}) {
+  const {workspace, manager, onFullscreen, onDetach} = props;
+  const {dock, right, bottom, rightWidth, dockGeometry, panelActivation, visited, visiblePanels} = props.layout.legacy;
+  const {locked} = useAuth();
+  const panel = useAgentPanels({...props.panels, bottom});
+  const children = Object.fromEntries(
+    dockPanels.map(name => [
+      name,
+      // The conversation is always mounted; the other panels are mounted the first time they are shown.
+      name === 'conversation' || visited.has(name) ? panel(name, visiblePanels.includes(name)) : null,
+    ]),
+  );
   return (
     <div
       id="agent-workspace"
@@ -99,165 +70,18 @@ export default function AgentWorkspace(props: Props) {
         active={workspace === 'agent' && !manager && !locked}
         activation={panelActivation}
         onFullscreen={onFullscreen}
-        onVisiblePanels={onVisiblePanels}
+        onVisiblePanels={props.layout.legacy.setVisiblePanels}
         map={dock}
-        onChange={onDockChange}
+        onChange={props.layout.legacy.changeDock}
         rightVisible={right}
         bottomVisible={bottom}
         rightWidth={rightWidth}
-        onRightWidth={onRightWidth}
+        onRightWidth={props.layout.legacy.setRightWidth}
         geometry={dockGeometry}
-        onGeometry={onGeometry}
-        onResizeStart={onResizeStart}
-        onDetach={onDetach}
-        children={{
-          editor: visited.has('editor') ? (
-            <Workbench
-              ownerId={auth.principal.id}
-              project={project}
-              onAddProject={onAddProject}
-              session={session}
-              onTargetChange={refresh}
-              fileRequest={fileRequest}
-              reviewMode={false}
-              visible={workspaceActive && visiblePanels.includes('editor')}
-              bottom={bottom}
-              onError={report}
-            />
-          ) : null,
-          conversation: (
-            <div className="conversation-home">
-              <OrchestratorStatus
-                presentation="sidebar"
-                sidebarTarget={coordination.target}
-                selectedTasks={coordination.tasks}
-                sidebarVisible={coordination.visible}
-                onInspectTask={coordination.inspect}
-                onSummary={coordination.receiveSummary}
-                quietWhenIdle
-                ownerId={auth.principal.id}
-                selected={selected}
-                enabled={workspaceActive && (visiblePanels.includes('conversation') || coordination.open)}
-                onPrimary={onPrimary}
-                onOpen={onOpenConversation}
-              />
-              {mainState === 'failed' && !selected && (
-                <div className="main-agent-error" role="alert">
-                  <p>Your main agent could not be opened. Your existing chats are still available.</p>
-                  <Button variant="outline" onClick={onOpenMainAgent}>
-                    Retry main agent
-                  </Button>
-                </div>
-              )}
-              <Chat
-                coordinating={selected === primaryId}
-                onConfigureAgent={() => onManager('models')}
-                onOpenVoiceSettings={() => onManager('voice')}
-                visible={workspaceActive && visiblePanels.includes('conversation')}
-                ownerId={auth.principal.id}
-                session={session}
-                engines={engines}
-                providers={providers}
-                projects={projects}
-                onHistory={() => {
-                  const epoch = authEpoch.current,
-                    id = selected;
-                  if (id)
-                    sessionCache.current
-                      .history(id)
-                      .then(value => {
-                        if (epoch === authEpoch.current && selection.current === id) setSession(value);
-                      })
-                      .catch(reason => {
-                        if (epoch === authEpoch.current) report(reason);
-                      });
-                }}
-                onSelect={onOpenConversation}
-                onRefresh={refresh}
-                onError={report}
-                incoming={incoming}
-                onOpenSurface={onOpenSurface}
-                onOpenFile={onOpenFile}
-                changes={
-                  changesSource.data
-                    ? {
-                        files: changesSource.data.files.length,
-                        ...(changesSource.data.counts_complete
-                          ? {
-                              additions: changesSource.data.additions,
-                              deletions: changesSource.data.deletions,
-                            }
-                          : {}),
-                        loading: changesSource.loading,
-                      }
-                    : undefined
-                }
-              />
-            </div>
-          ),
-          review: visited.has('review') ? (
-            <ChangeReview
-              ownerId={auth.principal.id}
-              project={project}
-              session={session}
-              visible={workspaceActive && visiblePanels.includes('review')}
-              source={changesSource}
-              onError={report}
-              onOpenFile={onOpenFile}
-            />
-          ) : null,
-          terminal: visited.has('terminal') ? (
-            <TerminalPanel
-              ownerId={auth.principal.id}
-              project={project}
-              workspaceSession={session?.id}
-              executionRoot={session?.cwd || project?.path}
-              onError={report}
-            />
-          ) : null,
-          browser: visited.has('browser') ? (
-            <BrowserSurface
-              visible={workspaceActive && visiblePanels.includes('browser')}
-              locked={locked}
-              projectId={project?.id}
-              taskId={taskId}
-              onContext={context => {
-                const item = contextItem(context);
-                if (!selected || !item) {
-                  report(new Error('Select a conversation before attaching browser context.'));
-                  return;
-                }
-                onIncoming({
-                  id: crypto.randomUUID(),
-                  sessionId: selected,
-                  text: '',
-                  attachments: [],
-                  context: [item],
-                });
-                onRevealConversation();
-              }}
-            />
-          ) : null,
-          computer: visited.has('computer') ? (
-            <ComputerSurface
-              visible={workspaceActive && visiblePanels.includes('computer')}
-              onError={report}
-              onSection={onManager}
-            />
-          ) : null,
-          artifacts: visited.has('artifacts') ? (
-            <Artifacts
-              key={auth.principal.id}
-              ownerId={auth.principal.id}
-              projectId={project?.id || null}
-              visible={workspaceActive && visiblePanels.includes('artifacts')}
-              onContext={(text, attachments) => {
-                onIncoming({id: crypto.randomUUID(), sessionId: selected, text, attachments});
-                onShowChat();
-              }}
-            />
-          ) : null,
-        }}
+        onGeometry={props.layout.legacy.setDockGeometry}
+        onResizeStart={props.layout.rememberLayout}
+        onDetach={name => onDetach(panelSurface(name))}
+        children={children}
       />
     </div>
   );

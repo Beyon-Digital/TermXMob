@@ -1,11 +1,10 @@
-import LayoutPresets from '../../components/LayoutPresets';
+import LayoutPresets, {type PresetRow} from '../../components/LayoutPresets';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
-import type {NamedLayout} from '../../lib/layout-presets';
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  presets: NamedLayout[];
+  presets: PresetRow[];
   onSave: (name: string) => void;
   onRestore: (id: string) => void;
   onRemove: (id: string) => void;

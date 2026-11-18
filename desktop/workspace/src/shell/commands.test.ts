@@ -100,8 +100,26 @@ describe('command registry', () => {
     expect(defaults.terminal).toBe('Mod+7');
     expect(defaults.closeTab).toBe('Mod+W');
     expect(defaults.reopenTab).toBe('Mod+Shift+T');
-    for (const planned of ['split', 'focusGroup1', 'focusGroup2', 'focusGroup3'])
-      expect(findCommand(planned)).toBeUndefined();
+  });
+
+  it('adds the tab-group keys, all for the new layout only', () => {
+    const expected: Record<string, string> = {
+      splitRight: 'Mod+\\',
+      splitDown: 'Mod+K Mod+\\',
+      focusGroup1: 'Mod+1',
+      focusGroup2: 'Mod+2',
+      focusGroup3: 'Mod+3',
+      maximizeGroup: 'Mod+K Z',
+      newTerminal: 'Ctrl+Shift+`',
+    };
+    for (const [id, keys] of Object.entries(expected)) {
+      expect(findCommand(id)?.defaultKeys, id).toBe(keys);
+      expect(findCommand(id)?.engine, id).toBe('tree');
+    }
+    // The old dock keeps its own meaning for the same keys.
+    expect(findCommand('chat')?.keysIn).toBe('legacy');
+    expect(findCommand('focus')?.engine).toBe('legacy');
+    expect(findCommand('right')?.engine).toBe('legacy');
   });
 
   it('runs every command through the shell actions and nothing else', () => {
@@ -128,10 +146,53 @@ describe('command registry', () => {
 
 describe('command palette', () => {
   const agent = {workspace: 'agent' as const, hostAdmin: true};
+  const tree = {...agent, engine: 'tree' as const};
+
+  it('lists the engine\'s own commands and hides the other engine\'s', () => {
+    const legacy = paletteEntries(agent, defaults, () => {}).map(entry => entry.id);
+    const treeIds = paletteEntries(tree, defaults, () => {}).map(entry => entry.id);
+    for (const id of ['splitRight', 'splitDown', 'focusGroup1', 'maximizeGroup', 'newTerminal', 'move-tab-other-group']) {
+      expect(legacy, id).not.toContain(id);
+      expect(treeIds, id).toContain(id);
+    }
+    for (const id of ['focus', 'right']) {
+      expect(legacy, id).toContain(id);
+      expect(treeIds, id).not.toContain(id);
+    }
+    // Chat, Workbench and Browser stay reachable by name in both; only their number keys belong to the old dock.
+    for (const id of ['chat', 'workbench', 'browser', 'closeTab', 'reopenTab', 'nextTab', 'left', 'bottom']) {
+      expect(legacy, id).toContain(id);
+      expect(treeIds, id).toContain(id);
+    }
+  });
+
+  it('treats a missing engine as the old dock', () => {
+    expect(commandAvailable(findCommand('splitRight')!, agent)).toBe(false);
+    expect(commandAvailable(findCommand('splitRight')!, tree)).toBe(true);
+    expect(commandAvailable(findCommand('focus')!, agent)).toBe(true);
+    expect(commandAvailable(findCommand('focus')!, tree)).toBe(false);
+  });
+
+  it('closeTab, reopen and next or previous tab apply in both engines, with when: agent', () => {
+    for (const id of ['closeTab', 'reopenTab', 'nextTab', 'previousTab', 'left', 'bottom']) {
+      const command = findCommand(id)!;
+      expect(commandAvailable(command, agent), id).toBe(true);
+      expect(commandAvailable(command, tree), id).toBe(true);
+    }
+    for (const id of ['splitRight', 'focusGroup1', 'maximizeGroup'])
+      expect(commandAvailable(findCommand(id)!, {workspace: 'studio', hostAdmin: true, engine: 'tree'}), id).toBe(false);
+  });
+
+  it('shares a context only where the keys are live in the same engine', () => {
+    expect(sharesContext(findCommand('chat')!, findCommand('focusGroup1')!)).toBe(false);
+    expect(sharesContext(findCommand('focus')!, findCommand('maximizeGroup')!)).toBe(false);
+    expect(sharesContext(findCommand('chat')!, findCommand('closeTab')!)).toBe(true);
+    expect(sharesContext(findCommand('focusGroup1')!, findCommand('focusGroup2')!)).toBe(true);
+  });
 
   it('lists exactly the registry for the context, in registry order, with the stored shortcuts', () => {
     const entries = paletteEntries(agent, {...defaults, palette: 'Mod+Alt+P'}, () => {});
-    expect(entries.map(entry => entry.id)).toEqual(commands.map(command => command.id));
+    expect(entries.map(entry => entry.id)).toEqual(commands.filter(command => command.engine !== 'tree').map(command => command.id));
     expect(entries.find(entry => entry.id === 'palette')?.shortcut).toBe('Mod+Alt+P');
     expect(entries.find(entry => entry.id === 'lock')?.shortcut).toBeUndefined();
     for (const category of settingsCategories)
@@ -172,6 +233,14 @@ describe('command palette', () => {
 });
 
 describe('keybinding grammar and warnings', () => {
+  it('does not report the default keys of the two engines as conflicts, but reports a real clash', () => {
+    expect(bindingWarnings({...defaults}).filter(warning => warning.includes('conflicts'))).toEqual([]);
+    const clash = bindingWarnings({...defaults, splitRight: defaults.focusGroup1});
+    expect(clash.some(warning => warning.includes('conflicts with'))).toBe(true);
+    // Reusing an old-dock key for a new-layout command is a clash only if both are live in one engine.
+    expect(bindingWarnings({...defaults, focus: defaults.newTerminal}).some(warning => warning.includes('conflicts with'))).toBe(false);
+  });
+
   it('accepts the backtick, comma, backslash and Tab keys', () => {
     for (const binding of ['Ctrl+`', 'Mod+,', 'Mod+\\', 'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Mod+K Mod+\\']) {
       expect(validBinding(binding), binding).toBe(true);
@@ -387,12 +456,69 @@ describe('shortcut dispatch and terminal focus', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it('routes the number keys by engine: the old presets in the old dock, group focus in the new layout', () => {
+    const calls: [string, string][] = [];
+    const mountEngine = (engine: 'legacy' | 'tree') => {
+      const run = vi.fn((id: string) => calls.push([engine, id]));
+      renderHook(() => useShortcuts({bindings: {...defaults}, engine, suspended: () => false, run}));
+      return run;
+    };
+    mountEngine('tree');
+    press(document.body, {key: '1', ctrlKey: true});
+    press(document.body, {key: '\\', ctrlKey: true});
+    cleanup();
+    mountEngine('legacy');
+    press(document.body, {key: '1', ctrlKey: true});
+    const unused = press(document.body, {key: '\\', ctrlKey: true});
+    expect(calls).toEqual([
+      ['tree', 'focusGroup1'],
+      ['tree', 'splitRight'],
+      ['legacy', 'chat'],
+    ]);
+    // A key that belongs to the other engine is not taken from the page.
+    expect(unused.defaultPrevented).toBe(false);
+  });
+
+  it('matches Control+Shift+backtick by position and runs it from a terminal', () => {
+    const run = vi.fn();
+    renderHook(() => useShortcuts({bindings: {...defaults}, engine: 'tree', suspended: () => false, run}));
+    const terminal = document.body.appendChild(document.createElement('div'));
+    terminal.className = 'xterm';
+    const input = terminal.appendChild(document.createElement('textarea'));
+    press(input, {key: '~', code: 'Backquote', ctrlKey: true, shiftKey: true});
+    expect(run).toHaveBeenCalledWith('newTerminal', true);
+  });
+
+  it('runs the split-down chord, Mod+K then Mod+backslash, and leaves Mod+K Z for maximize', () => {
+    const run = vi.fn();
+    renderHook(() => useShortcuts({bindings: {...defaults}, engine: 'tree', suspended: () => false, run}));
+    press(document.body, {key: 'k', ctrlKey: true});
+    press(document.body, {key: '\\', ctrlKey: true});
+    expect(run).toHaveBeenLastCalledWith('splitDown', false);
+    press(document.body, {key: 'k', ctrlKey: true});
+    press(document.body, {key: 'z'});
+    expect(run).toHaveBeenLastCalledWith('maximizeGroup', false);
+  });
+
   it('exposes the terminal allowlist as the commands that opt in', () => {
     expect(
       keyed
         .filter(command => command.terminal)
         .map(command => command.id)
         .sort(),
-    ).toEqual(['bottom', 'focusTerminal', 'left', 'nextTab', 'palette', 'previousTab', 'right']);
+    ).toEqual([
+      'bottom',
+      'focusGroup1',
+      'focusGroup2',
+      'focusGroup3',
+      'focusTerminal',
+      'left',
+      'newTerminal',
+      'nextTab',
+      'palette',
+      'previousTab',
+      'right',
+      'splitRight',
+    ]);
   });
 });

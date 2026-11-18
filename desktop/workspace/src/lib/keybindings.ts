@@ -1,4 +1,4 @@
-import {findCommand, keyedSpecs, type CommandId as KeyedCommandId} from '../shell/commands';
+import {findCommand, keyedSpecs, sharesContext, type CommandId as KeyedCommandId} from '../shell/commands';
 import {isMac} from './shortcut-label';
 
 /*
@@ -40,8 +40,10 @@ export function strokeMatches(stroke: string, event: KeyboardEvent, options: Str
       ? event.metaKey
       : event.ctrlKey
     : event.ctrlKey || event.metaKey;
+  // Shift turns the backtick key into `~`, so it is matched by position as well.
+  const keyMatches = event.key.toLowerCase() === key || (key === '`' && event.code === 'Backquote');
   return (
-    event.key.toLowerCase() === key &&
+    keyMatches &&
     event.shiftKey === pieces.includes('shift') &&
     event.altKey === pieces.includes('alt') &&
     (mod
@@ -85,14 +87,20 @@ function altFallback(binding: string) {
 }
 
 export function bindingWarnings(bindings: Bindings) {
-  const seen = new Map<string, string>();
+  const seen = new Map<string, string[]>();
   const warnings: string[] = [];
   const taken = new Set(Object.values(bindings).map(binding => binding.toLowerCase()));
   for (const [id, binding] of Object.entries(bindings)) {
     const title = findCommand(id)?.title ?? id;
     const normalized = binding.toLowerCase();
-    if (seen.has(normalized)) warnings.push(title + ' conflicts with ' + seen.get(normalized));
-    seen.set(normalized, title);
+    // Two commands only clash when both keys are live in the same layout engine.
+    const earlier = (seen.get(normalized) ?? []).find(other => {
+      const a = findCommand(id);
+      const b = findCommand(other);
+      return !a || !b || sharesContext(a, b);
+    });
+    if (earlier !== undefined) warnings.push(title + ' conflicts with ' + (findCommand(earlier)?.title ?? earlier));
+    seen.set(normalized, [...(seen.get(normalized) ?? []), id]);
     if (BROWSER_RESERVED.test(binding)) {
       const fallback = altFallback(binding);
       const hint = taken.has(fallback.toLowerCase()) ? '' : ' Try ' + fallback + ' instead, or use';

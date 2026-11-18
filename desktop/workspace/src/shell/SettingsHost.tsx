@@ -44,6 +44,10 @@ type Props = {
   onTheme: (theme: ThemePreference) => void;
   bindings: Bindings;
   onBindings: (bindings: Bindings) => void;
+  /** `page` shows Settings in the space it is given, as a tab, instead of as a modal. */
+  presentation?: 'dialog' | 'page';
+  /** Called with whether the open page has unsaved edits. */
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 /** The Settings surface: category list, scope picker and the page for the chosen category. */
@@ -89,6 +93,8 @@ export default function SettingsHost(props: Props) {
       category={category}
       onSelect={props.onSection}
       onClose={props.onClose}
+      presentation={props.presentation}
+      onDirtyChange={props.onDirtyChange}
     >
       <Suspense fallback={<p>Opening settings…</p>}>
         {manager === 'characters' ? (

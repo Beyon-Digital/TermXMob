@@ -299,6 +299,26 @@
     inset: 0;
   }
 
+  /* ---- Settings as a tab: the same page as the modal, filling the tab instead of floating ----------------------------- */
+  .settings-surface-page {
+    --settings-rail: 224px;
+    display: grid;
+    flex: 1;
+    grid-template-columns: var(--settings-rail) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-size: var(--text-sm);
+  }
+  @media (max-width: 700px) {
+    .settings-surface-page {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .tab-drop {
       transition: none;

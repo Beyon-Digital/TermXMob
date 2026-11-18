@@ -28,6 +28,7 @@ import type {Project} from '../lib/api';
 import type {Bindings} from '../lib/keybindings';
 import {isDetachedWindow, nativeWorkspace} from '../lib/native';
 import {formatShortcut} from '../lib/shortcut-label';
+import type {ShellEngine} from '../lib/shell-engine';
 import type {Layout} from '../lib/use-layout';
 import type {StudioSection, WorkspaceMode} from '../lib/workspace-mode';
 import {detachedBrowser} from '../lib/window-journal';
@@ -37,6 +38,8 @@ import type {Coordination} from './use-coordination';
 import {useWorkspaceData} from './WorkspaceDataProvider';
 
 type Props = {
+  /** The layout engine. The tab layout has no right dock and no floating side bar, so those menu entries are left out. */
+  engine?: ShellEngine;
   workspace: WorkspaceMode;
   studioSection: StudioSection;
   /** The open manager or settings page, `''` for none. */
@@ -80,6 +83,7 @@ type Props = {
 
 /** The title bar: where you are, the way back, Subagents, full screen and the Workspace actions menu. */
 export default function WorkspaceHeader(props: Props) {
+  const tree = props.engine === 'tree';
   const {
     workspace,
     studioSection,
@@ -301,7 +305,7 @@ export default function WorkspaceHeader(props: Props) {
               Sidebar
             </span>
             <div role="group" aria-labelledby="sidebar-behavior-label" className="workspace-menu-choices">
-              {(['pinned', 'collapsed', 'hover'] as const).map(mode => (
+              {(tree ? (['pinned', 'collapsed'] as const) : (['pinned', 'collapsed', 'hover'] as const)).map(mode => (
                 <button
                   key={mode}
                   data-close-menu
@@ -312,10 +316,12 @@ export default function WorkspaceHeader(props: Props) {
                 </button>
               ))}
             </div>
-            <button data-close-menu onClick={onToggleSidePanel}>
-              <PanelRight size={14} />
-              Toggle side panel<kbd>{formatShortcut(bindings.right)}</kbd>
-            </button>
+            {!tree && (
+              <button data-close-menu onClick={onToggleSidePanel}>
+                <PanelRight size={14} />
+                Toggle side panel<kbd>{formatShortcut(bindings.right)}</kbd>
+              </button>
+            )}
             <button data-close-menu onClick={onToggleBottomPanel}>
               <PanelBottom size={14} />
               Toggle bottom panel<kbd>{formatShortcut(bindings.bottom)}</kbd>

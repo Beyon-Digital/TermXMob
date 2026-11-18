@@ -51,7 +51,8 @@ export function SettingsNavigation({category,onSelect,waiting:given}:{category:s
 type Scope=HTMLFormElement|'page';
 const scopeOf=(node:EventTarget|null):Scope=>node instanceof Element?(node.closest('form')??'page'):'page';
 
-export default function SettingsSurface({category,onSelect,onClose,children,context,scopeKey,waiting}:{waiting?:number;scopeKey?:string;context?:ReactNode;category:string;onSelect:(id:string)=>void;onClose:()=>void;children:ReactNode}){
+/** `dialog` is the modal; `page` fills the space it is given (the new layout opens Settings as a tab) and reports unsaved edits through `onDirtyChange`. */
+export default function SettingsSurface({category,onSelect,onClose,children,context,scopeKey,waiting,presentation='dialog',onDirtyChange}:{waiting?:number;scopeKey?:string;context?:ReactNode;category:string;onSelect:(id:string)=>void;onClose:()=>void;children:ReactNode;presentation?:'dialog'|'page';onDirtyChange?:(dirty:boolean)=>void}){
  const [surface,setSurface]=useState<HTMLDivElement|null>(null);
  const opener=useRef(document.activeElement instanceof HTMLElement?document.activeElement:null);
  useEffect(()=>{const viewport=window.visualViewport;if(!viewport||!surface)return;let frame=0;const fit=()=>{const node=surface;if(!node)return;node.style.setProperty('--settings-viewport-height',viewport.height+'px');node.style.setProperty('--settings-viewport-top','calc('+viewport.offsetTop+'px + max(16px, env(safe-area-inset-top)))');node.style.setProperty('--settings-viewport-bottom','auto');cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{const focused=document.activeElement;if(window.matchMedia('(max-width:700px)').matches&&focused instanceof HTMLElement&&node.contains(focused)&&focused.matches('input,textarea,select,[contenteditable=true]'))focused.scrollIntoView?.({block:'nearest',inline:'nearest'})})};fit();viewport.addEventListener('resize',fit);viewport.addEventListener('scroll',fit);return()=>{cancelAnimationFrame(frame);viewport.removeEventListener('resize',fit);viewport.removeEventListener('scroll',fit)}},[surface]);
@@ -62,7 +63,7 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
  const edits=useRef(new Map<Scope,number>()),revision=useRef(0),action=useRef<Scope>('page');
  const [legacyDirty,setLegacyDirty]=useState(false),[epoch,setEpoch]=useState(0),[pending,setPending]=useState<{proceed?:()=>void}|null>(null);
  const dirty=forms.size>0||legacyDirty,dirtyNow=useRef(false);
- useEffect(()=>{dirtyNow.current=dirty},[dirty]);
+ useEffect(()=>{dirtyNow.current=dirty;onDirtyChange?.(dirty)},[dirty]);
  const clearEdits=useCallback(()=>{edits.current.clear();dirtyNow.current=false;setLegacyDirty(false)},[]);
  const beginSave=useCallback(()=>{const scope=action.current,version=edits.current.get(scope);return()=>{if(edits.current.get(scope)===version)edits.current.delete(scope);for(const key of edits.current.keys())if(key!=='page'&&!key.isConnected)edits.current.delete(key);setLegacyDirty(edits.current.size>0)}},[]);
 
@@ -79,8 +80,9 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
  useEffect(()=>{clearEdits();surface?.querySelector('.settings-content')?.scrollTo?.(0,0)},[category,scopeKey]);
  function select(id:string){if(id===category)return;if(guarded(()=>onSelect(id)))onSelect(id)}
  function save(){for(const form of forms.values())form.current?.requestSubmit()}
- return <Dialog open onOpenChange={open=>{if(!open&&guarded(onClose))onClose()}}><DialogContent ref={setSurface} className="settings-surface" onCloseAutoFocus={event=>{if(!opener.current?.isConnected){const target=Array.from(document.querySelectorAll<HTMLElement>('.settings-launcher,.sidebar-operations[aria-label="Settings"],[aria-label="Show sidebar"]')).find(node=>node.getClientRects().length>0)??null;if(target){event.preventDefault();target.focus()}}}} onPointerDownOutside={event=>event.preventDefault()}>
-  <header className="settings-title"><div className="settings-title-copy"><DialogTitle>Settings</DialogTitle><DialogDescription>Configure your account, this host and workspace capabilities.</DialogDescription></div>{context}</header>
+ const page=presentation==='page';
+ const body=<>
+  <header className="settings-title"><div className="settings-title-copy">{page?<><h2>Settings</h2><p>Configure your account, this host and workspace capabilities.</p></>:<><DialogTitle>Settings</DialogTitle><DialogDescription>Configure your account, this host and workspace capabilities.</DialogDescription></>}</div>{context}</header>
   <SettingsNavigation category={category} onSelect={select} waiting={waiting}/>
   <SettingsFormsContext.Provider value={registry}><SaveContext.Provider value={beginSave}>
    <div className="settings-content" onClickCapture={event=>{action.current=scopeOf(event.target)}} onSubmitCapture={event=>{action.current=scopeOf(event.target)}} onChangeCapture={event=>{
@@ -97,5 +99,7 @@ export default function SettingsSurface({category,onSelect,onClose,children,cont
    {dirty&&<div className="settings-footer-actions"><Button variant="outline" onClick={()=>askDiscard()}>Discard</Button>{forms.size>0&&<Button onClick={save}>Save</Button>}</div>}
   </footer>
   <Dialog open={!!pending} onOpenChange={open=>{if(!open)setPending(null)}}><DialogContent><DialogTitle>Discard unsaved changes?</DialogTitle><DialogDescription>Your edits on this page have not been saved and will be lost.</DialogDescription><div className="settings-footer-actions"><Button variant="outline" onClick={()=>setPending(null)}>Keep editing</Button><Button variant="destructive" onClick={discard}>Discard changes</Button></div></DialogContent></Dialog>
- </DialogContent></Dialog>
+ </>;
+ if(page)return <div ref={setSurface} className="settings-surface-page" role="region" aria-label="Settings">{body}</div>;
+ return <Dialog open onOpenChange={open=>{if(!open&&guarded(onClose))onClose()}}><DialogContent ref={setSurface} className="settings-surface" onCloseAutoFocus={event=>{if(!opener.current?.isConnected){const target=Array.from(document.querySelectorAll<HTMLElement>('.settings-launcher,.sidebar-operations[aria-label="Settings"],[aria-label="Show sidebar"]')).find(node=>node.getClientRects().length>0)??null;if(target){event.preventDefault();target.focus()}}}} onPointerDownOutside={event=>event.preventDefault()}>{body}</DialogContent></Dialog>
 }

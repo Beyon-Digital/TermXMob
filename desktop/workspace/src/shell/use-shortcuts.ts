@@ -1,9 +1,12 @@
 import {useEffect, useLayoutEffect, useRef} from 'react';
 import {shortcutSurface, strokeMatches, type Bindings, type CommandId} from '../lib/keybindings';
-import {keyedSpecs} from './commands';
+import type {ShellEngine} from '../lib/shell-engine';
+import {keyLive, keyedSpecs} from './commands';
 
 type ShortcutOptions = {
   bindings: Bindings;
+  /** The layout engine in force. A key that belongs to the other engine is left alone for the page and the shell. */
+  engine?: ShellEngine;
   /** True while the workspace is locked: no key does anything. */
   suspended: () => boolean;
   run: (id: CommandId, terminalFocused: boolean) => void;
@@ -32,6 +35,7 @@ export function useShortcuts(options: ShortcutOptions) {
     latest.current = options;
   });
   const {bindings} = options;
+  const engine = options.engine ?? 'legacy';
 
   useEffect(() => {
     let prefix = '';
@@ -47,7 +51,7 @@ export function useShortcuts(options: ShortcutOptions) {
         return;
       }
       const entries = (Object.entries(bindings) as [CommandId, string][]).filter(
-        ([id]) => !terminal || keyedSpecs[id].terminal,
+        ([id]) => keyLive(keyedSpecs[id], engine) && (!terminal || keyedSpecs[id].terminal),
       );
       const matches = (stroke: string) => strokeMatches(stroke, event, {terminal});
       const run = (id: CommandId) => current.run(id, terminal);
@@ -85,5 +89,5 @@ export function useShortcuts(options: ShortcutOptions) {
       clearTimeout(pending);
       window.removeEventListener('keydown', shortcuts);
     };
-  }, [bindings]);
+  }, [bindings, engine]);
 }

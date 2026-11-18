@@ -441,9 +441,10 @@ export function reduceLayout(state: LayoutState, action: LayoutAction, options: 
       return commit(state, {...layout, sideBar: {...layout.sideBar, visible: !layout.sideBar.visible}});
 
     case 'setSideBar':
+      // Programmatic (a narrow window, the rail's own button): not an edit worth an undo step. The toggle command is.
       return layout.sideBar.visible === action.visible
         ? state
-        : commit(state, {...layout, sideBar: {...layout.sideBar, visible: action.visible}});
+        : commit(state, {...layout, sideBar: {...layout.sideBar, visible: action.visible}}, {undo: false});
 
     case 'setSideBarView':
       return commit(state, {...layout, sideBar: {...layout.sideBar, view: action.view, visible: true}});

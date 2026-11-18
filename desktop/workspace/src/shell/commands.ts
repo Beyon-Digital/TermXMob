@@ -1,6 +1,7 @@
 import type {DockPanel} from '../lib/docking';
 import {settingsCategories} from '../lib/settings-categories';
 import type {Layout} from '../lib/use-layout';
+import type {ShellEngine} from '../lib/shell-engine';
 import type {WorkspaceMode} from '../lib/workspace-mode';
 
 /**
@@ -40,6 +41,12 @@ export interface CommandActions {
   toggleFocusMode: () => void;
   undoLayout: () => void;
   resetLayout: () => void;
+  /** Tab groups (the new layout): split the focused group, focus a group by position (0-based), maximize, move, new terminal. */
+  splitGroup: (dir: 'row' | 'column') => void;
+  focusGroup: (index: number) => void;
+  maximizeGroup: () => void;
+  moveTabToOtherGroup: () => void;
+  newTerminal: () => void;
 }
 
 export type CommandSource = 'shortcut' | 'palette';
@@ -53,6 +60,8 @@ export interface CommandInvocation {
 export interface CommandContext {
   workspace: WorkspaceMode;
   hostAdmin: boolean;
+  /** The layout engine in force: the old dock or the tab-group tree. Absent means the old dock. */
+  engine?: ShellEngine;
 }
 
 /** `agent` commands act on the Agent workspace's panels; they are hidden and inert in Studio and Data. */
@@ -76,6 +85,10 @@ export interface CommandSpec {
   /** Stored binding grammar, for example `Mod+Shift+P` or the chord `Mod+K Z`. */
   defaultKeys?: string;
   when?: When;
+  /** The command exists only in this layout engine: it is hidden from the palette and its key is not live elsewhere. */
+  engine?: ShellEngine;
+  /** The default key is live only in this layout engine. The command stays in the palette in both. */
+  keysIn?: ShellEngine;
   /** Extra palette search terms. */
   keywords?: string;
   /** Leave a manager or settings page (back to the workspace) before running. */
@@ -100,6 +113,7 @@ const specs = keyed({
     title: 'Chat',
     category: 'View',
     defaultKeys: 'Mod+1',
+    keysIn: 'legacy',
     leavesManager: true,
     run: a => a.chooseLayout('chat'),
   },
@@ -107,6 +121,7 @@ const specs = keyed({
     title: 'Workbench',
     category: 'View',
     defaultKeys: 'Mod+2',
+    keysIn: 'legacy',
     leavesManager: true,
     run: a => a.chooseLayout('workbench'),
   },
@@ -114,6 +129,7 @@ const specs = keyed({
     title: 'Browser',
     category: 'View',
     defaultKeys: 'Mod+3',
+    keysIn: 'legacy',
     leavesManager: true,
     run: a => a.openSurface('browser'),
   },
@@ -183,6 +199,7 @@ const specs = keyed({
     category: 'Layout',
     defaultKeys: 'Mod+Alt+B',
     when: 'agent',
+    engine: 'legacy',
     terminal: true,
     run: a => a.toggleSidePanel(),
   },
@@ -218,6 +235,7 @@ const specs = keyed({
     category: 'Layout',
     defaultKeys: 'Mod+K Z',
     when: 'agent',
+    engine: 'legacy',
     run: a => a.toggleFocusMode(),
   },
   undoLayout: {
@@ -328,6 +346,68 @@ const specs = keyed({
     defaultKeys: 'Mod+,',
     run: a => a.setManager('preferences'),
   },
+  splitRight: {
+    title: 'Split group right',
+    category: 'Layout',
+    defaultKeys: 'Mod+\\',
+    when: 'agent',
+    engine: 'tree',
+    terminal: true,
+    run: a => a.splitGroup('row'),
+  },
+  splitDown: {
+    title: 'Split group down',
+    category: 'Layout',
+    defaultKeys: 'Mod+K Mod+\\',
+    when: 'agent',
+    engine: 'tree',
+    run: a => a.splitGroup('column'),
+  },
+  focusGroup1: {
+    title: 'Focus first group',
+    category: 'Layout',
+    defaultKeys: 'Mod+1',
+    when: 'agent',
+    engine: 'tree',
+    terminal: true,
+    run: a => a.focusGroup(0),
+  },
+  focusGroup2: {
+    title: 'Focus second group',
+    category: 'Layout',
+    defaultKeys: 'Mod+2',
+    when: 'agent',
+    engine: 'tree',
+    terminal: true,
+    run: a => a.focusGroup(1),
+  },
+  focusGroup3: {
+    title: 'Focus third group',
+    category: 'Layout',
+    defaultKeys: 'Mod+3',
+    when: 'agent',
+    engine: 'tree',
+    terminal: true,
+    run: a => a.focusGroup(2),
+  },
+  maximizeGroup: {
+    title: 'Maximize group / restore layout',
+    category: 'Layout',
+    defaultKeys: 'Mod+K Z',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'zoom focus fullscreen group editor area',
+    run: a => a.maximizeGroup(),
+  },
+  newTerminal: {
+    title: 'New terminal',
+    category: 'Terminal',
+    defaultKeys: 'Ctrl+Shift+`',
+    when: 'agent',
+    engine: 'tree',
+    terminal: true,
+    run: a => a.newTerminal(),
+  },
   nextTab: {
     title: 'Next tab',
     category: 'Layout',
@@ -398,6 +478,19 @@ const before: Command[] = [
   },
 ];
 
+/** Palette-only entries for the tab-group layout. */
+const treeOnly: Command[] = [
+  {
+    id: 'move-tab-other-group',
+    title: 'Move tab to other group',
+    category: 'Layout',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'tab group split move editor area',
+    run: a => a.moveTabToOtherGroup(),
+  },
+];
+
 const settingsPages: Command[] = settingsCategories.map(({id, label}) => ({
   id: 'manager-' + id,
   title: label,
@@ -451,7 +544,7 @@ const keyedCommands: Command[] = Object.entries(keyedSpecs).map(([id, spec]) => 
 }));
 
 /** Every command, in palette order. */
-export const commands: readonly Command[] = [...before, ...settingsPages, ...middle, ...keyedCommands];
+export const commands: readonly Command[] = [...before, ...settingsPages, ...middle, ...treeOnly, ...keyedCommands];
 
 const byId = new Map(commands.map(command => [command.id, command]));
 
@@ -463,7 +556,8 @@ export function isCommandId(id: string): id is CommandId {
   return Object.hasOwn(keyedSpecs, id);
 }
 
-export function commandAvailable(command: Pick<Command, 'when'>, context: CommandContext): boolean {
+export function commandAvailable(command: Pick<Command, 'when' | 'engine'>, context: CommandContext): boolean {
+  if (command.engine && command.engine !== (context.engine ?? 'legacy')) return false;
   if (command.when === 'agent') return context.workspace === 'agent';
   if (command.when === 'host-admin') return context.hostAdmin;
   return true;
@@ -488,7 +582,22 @@ export function paletteEntries(
     }));
 }
 
+/** The layout engines a command's key is live in. */
+export function keyEngines(command: Pick<Command, 'engine' | 'keysIn'>): ShellEngine[] {
+  const only = command.engine ?? command.keysIn;
+  return only ? [only] : ['legacy', 'tree'];
+}
+
 /** Whether two default keys could both be live at once, so they would shadow each other. */
-export function sharesContext(a: Pick<Command, 'when'>, b: Pick<Command, 'when'>): boolean {
-  return !a.when || !b.when || a.when === b.when;
+export function sharesContext(
+  a: Pick<Command, 'when' | 'engine' | 'keysIn'>,
+  b: Pick<Command, 'when' | 'engine' | 'keysIn'>,
+): boolean {
+  const engines = keyEngines(b);
+  return (!a.when || !b.when || a.when === b.when) && keyEngines(a).some(engine => engines.includes(engine));
+}
+
+/** Whether a command's key does anything in this engine. */
+export function keyLive(command: Pick<Command, 'engine' | 'keysIn'>, engine: ShellEngine): boolean {
+  return keyEngines(command).includes(engine);
 }
