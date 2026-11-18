@@ -48,7 +48,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import hashlib
 import json
 import os
@@ -504,6 +503,8 @@ class HolderServer:
     # -- lifecycle ---------------------------------------------------------------
 
     def acquire_lock(self) -> bool:
+        import fcntl  # POSIX only; imported here so the module (and the daemon) still load on Windows
+
         directory = holder_dir(self.root)
         self.directory = directory
         fd = os.open(directory / LOCK_NAME, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)

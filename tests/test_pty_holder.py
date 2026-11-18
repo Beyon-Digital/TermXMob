@@ -745,3 +745,16 @@ def test_the_holder_has_no_sandbox_or_profile_vocabulary():
     with pytest.raises(H.ProtocolError):
         H.validate_spawn({"id": "a", "argv": ["x"], "cwd": "/", "env": {}, "rows": 1, "cols": 1, "sandbox_profile": "host"})
     assert spawn_fields == {"id", "argv", "cwd", "env", "rows", "cols", "meta"}
+
+
+def test_modules_import_without_fcntl_so_the_daemon_starts_on_windows():
+    """`AppState` imports the holder client on every platform; `fcntl` does not exist on Windows."""
+    code = (
+        "import sys\n"
+        "sys.modules['fcntl'] = None\n"  # makes `import fcntl` raise ImportError, as on Windows
+        "import termx.pty_holder, termx.pty_holder_client\n"
+        "print('ok')\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
