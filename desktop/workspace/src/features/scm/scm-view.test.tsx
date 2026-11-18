@@ -166,10 +166,87 @@ describe('ScmView staging', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('does not offer discard: the host has no operation that discards edits', async () => {
-    view(deliveryHost());
-    await screen.findByRole('list', {name: 'Changes'});
+});
+
+describe('ScmView discard', () => {
+  it('asks the host what would be lost and runs nothing until the dialog is confirmed', async () => {
+    const user = userEvent.setup();
+    const host = deliveryHost({discardKinds: {'notes.md': 'untracked', 'old.txt': 'deleted'}});
+    const {props} = view(host);
+    await user.click(await screen.findByRole('button', {name: 'Discard changes notes.md'}));
+    const dialog = await screen.findByRole('dialog', {name: 'Discard changes to notes.md'});
+    expect(host.operations()).toEqual([{operation: 'discard', arguments: {paths: ['notes.md'], include_staged: false}}]);
+    expect(host.executed()).toHaveLength(0);
+    expect(within(dialog).getByText('notes.md')).toBeInTheDocument();
+    expect(within(dialog).getByText('untracked file is deleted')).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('This cannot be undone.');
+    await user.click(within(dialog).getByRole('button', {name: 'Discard changes'}));
+    await waitFor(() => expect(host.executed()).toEqual([{confirmed: true}]));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('Changes discarded.');
+    expect(props.source.refresh).toHaveBeenCalled();
+  });
+
+  it('cancels without sending anything, and Escape cancels too', async () => {
+    const user = userEvent.setup();
+    const host = deliveryHost();
+    view(host);
+    await user.click(await screen.findByRole('button', {name: 'Discard changes old.txt'}));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', {name: 'Cancel'}));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', {name: 'Discard changes old.txt'}));
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(host.executed()).toHaveLength(0);
+  });
+
+  it('discards the whole Changes group with every file listed, and keeps staged changes unless asked', async () => {
+    const user = userEvent.setup();
+    const host = deliveryHost({worktrees: [{id: 'tree', path: '/wt', branch: 'feature'}]});
+    view(host, {session: session({worktree_id: 'tree'})});
+    await user.click(await screen.findByRole('button', {name: 'Discard all changes'}));
+    const dialog = await screen.findByRole('dialog', {name: 'Discard changes to 3 files'});
+    expect(host.operations()[0]).toEqual({operation: 'discard', arguments: {worktree_id: 'tree', paths: ['src/one.ts', 'notes.md', 'old.txt'], include_staged: false}});
+    expect(within(within(dialog).getByRole('list', {name: 'Files'})).getAllByRole('listitem')).toHaveLength(3);
+  });
+
+  it('discards a staged row together with its unstaged edits, and says so', async () => {
+    const user = userEvent.setup();
+    const host = deliveryHost({discardKinds: {'both.ts': 'staged'}});
+    view(host);
+    await user.click(await screen.findByRole('button', {name: 'Discard staged changes both.ts'}));
+    const dialog = await screen.findByRole('dialog', {name: 'Discard changes to both.ts'});
+    expect(host.operations()[0].arguments).toEqual({paths: ['both.ts'], include_staged: true});
+    expect(within(dialog).getByText('staged changes and edits are discarded')).toBeInTheDocument();
+  });
+
+  it('is destructive only on the final button, and offers no discard for a conflict', async () => {
+    const user = userEvent.setup();
+    const host = deliveryHost();
+    const conflict = file('src/clash.ts', 'U', 'U', {status: 'conflict'});
+    const {container, unmount} = view(host, {source: source([conflict])});
+    await screen.findByRole('list', {name: 'Merge conflicts'});
     expect(screen.queryByRole('button', {name: /discard/i})).not.toBeInTheDocument();
+    unmount();
+    const second = view(host);
+    expect(second.container.querySelectorAll('.button-destructive')).toHaveLength(0);
+    await user.click(await screen.findByRole('button', {name: 'Discard changes old.txt'}));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.querySelectorAll('.button-destructive')).toHaveLength(1);
+    expect(within(dialog).getByRole('button', {name: 'Discard changes'})).toHaveClass('button-destructive');
+    expect(dialog.querySelectorAll('.button-primary')).toHaveLength(0);
+    void container;
+  });
+
+  it('reports a refusal from the host inline and does not close over it silently', async () => {
+    const user = userEvent.setup();
+    const host = deliveryHost({outcome: {discard: {status: 'failed', result: {error: 'Files changed while preparing'}}}});
+    view(host);
+    await user.click(await screen.findByRole('button', {name: 'Discard changes old.txt'}));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', {name: 'Discard changes'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Confirm failed: Files changed while preparing.');
   });
 });
 

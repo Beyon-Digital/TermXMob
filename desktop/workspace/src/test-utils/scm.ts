@@ -63,9 +63,11 @@ type HostOptions = {
   records?: unknown[];
   /** Outcome of every execute, by operation. */
   outcome?: Record<string, {status: string; result: unknown}>;
+  /** What the host's dry run of a discard lists, by path; a path not listed is a modified file. */
+  discardKinds?: Record<string, 'modified' | 'deleted' | 'staged' | 'untracked'>;
 };
 
-const NEEDS_CONFIRMATION = new Set(['push', 'pr-create', 'pr-update', 'pr-comment', 'pr-review', 'worktree-remove']);
+const NEEDS_CONFIRMATION = new Set(['push', 'pr-create', 'pr-update', 'pr-comment', 'pr-review', 'worktree-remove', 'discard']);
 
 /** A fake delivery host: answers the status, prepare and execute calls and records every call. */
 export function deliveryHost(options: HostOptions = {}) {
@@ -87,7 +89,20 @@ export function deliveryHost(options: HostOptions = {}) {
       const id = 'a' + (prepared.size + 1);
       const args = (body?.arguments ?? {}) as Record<string, unknown>;
       prepared.set(id, {operation, arguments: args});
-      return {id, operation, arguments: args, head: 'abcdef0123456', requires_confirmation: NEEDS_CONFIRMATION.has(operation)};
+      const reply: Record<string, unknown> = {id, operation, arguments: args, head: 'abcdef0123456', requires_confirmation: NEEDS_CONFIRMATION.has(operation)};
+      if (operation === 'discard') {
+        const paths = (args.paths ?? []) as string[];
+        const includeStaged = args.include_staged === true;
+        reply.review = {
+          files: paths.map(path => {
+            const kind = options.discardKinds?.[path] ?? 'modified';
+            return {path, kind, staged: kind === 'staged', worktree: kind !== 'staged', keeps_staged: !includeStaged && kind === 'modified' && path === 'both.ts'};
+          }),
+          folders: [],
+          already_clean: [],
+        };
+      }
+      return reply;
     }
     const execute = /\/actions\/(a\d+)\/execute$/.exec(path);
     if (execute) {

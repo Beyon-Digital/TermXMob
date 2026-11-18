@@ -19,6 +19,7 @@ export type ScmError = {message: string; retry?: () => void};
 const DONE: Record<string, string> = {
   stage: '',
   unstage: '',
+  discard: 'Changes discarded.',
   commit: 'Committed.',
   fetch: 'Fetched.',
   pull: 'Pulled.',
@@ -189,6 +190,8 @@ export function useScm({project, session, source, onCheckoutChanged}: Options) {
     stage: (paths: string[]) => operate('Stage', 'stage', {paths}),
     unstage: (paths: string[]) => operate('Unstage', 'unstage', {paths}),
     hunk: (patch: string, stage: boolean) => operate(stage ? 'Stage hunk' : 'Unstage hunk', 'hunk', {patch, stage}),
+    /** Ask the host what a discard would lose; the dialog confirms it. `includeStaged` also drops the staged side. */
+    discard: (paths: string[], includeStaged: boolean) => operate('Discard', 'discard', {paths, include_staged: includeStaged}),
     commit: (message: string) => operate('Commit', 'commit', {message}),
     fetch: () => operate('Fetch', 'fetch'),
     pullChanges: () => operate('Pull', 'pull'),

@@ -1,16 +1,51 @@
 import {Button} from '../../components/ui/button';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../../components/ui/dialog';
-import type {Prepared, Worktree} from './scm-types';
+import type {DiscardFile, Prepared, Worktree} from './scm-types';
 
-type Summary = {title: string; verb: string; destructive?: boolean; rows: [string, string][]};
+type Summary = {
+  title: string;
+  verb: string;
+  destructive?: boolean;
+  rows: [string, string][];
+  /** Files the operation will change, one per line, and a sentence that says it cannot be undone. */
+  files?: {path: string; note: string}[];
+  warning?: string;
+};
 
 const text = (value: unknown) => (typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value));
+
+const KIND_NOTE: Record<DiscardFile['kind'], string> = {
+  modified: 'edits are discarded',
+  deleted: 'deleted file is restored',
+  staged: 'staged changes and edits are discarded',
+  untracked: 'untracked file is deleted',
+};
+
+/** The dry run of a discard in words: every file, what happens to it, and what stays. */
+function discardSummary(action: Prepared): Summary {
+  const review = action.review;
+  const paths = Array.isArray(action.arguments.paths) ? action.arguments.paths.map(text) : [];
+  const files = review ? review.files.map(item => ({path: item.path, note: KIND_NOTE[item.kind] + (item.keeps_staged ? '; staged changes stay' : '')})) : paths.map(path => ({path, note: ''}));
+  const rows: [string, string][] = [];
+  if (review?.folders.length) rows.push(['Folders', review.folders.join(', ') + ' will be removed with everything untracked in them.']);
+  if (review?.already_clean.length) rows.push(['Nothing to discard', review.already_clean.join(', ')]);
+  return {
+    title: files.length === 0 ? 'Nothing to discard' : files.length === 1 ? 'Discard changes to ' + files[0].path : 'Discard changes to ' + files.length + ' files',
+    verb: 'Discard changes',
+    destructive: true,
+    rows,
+    files,
+    warning: 'This cannot be undone. Discarded edits and deleted untracked files cannot be recovered from Git.',
+  };
+}
 
 /** What a confirmation says in words: the operation and every value it will use. No raw JSON. */
 export function summarize(action: Prepared, worktrees: readonly Worktree[]): Summary {
   const args = action.arguments;
   const number = text(args.number);
   switch (action.operation) {
+    case 'discard':
+      return discardSummary(action);
     case 'push':
       return {
         title: 'Push ' + text(args.branch) + ' to ' + text(args.remote),
@@ -70,6 +105,8 @@ type Props = {
   action: Prepared | null;
   worktrees: readonly Worktree[];
   busy: boolean;
+  /** Why the last attempt failed, shown in the dialog because the page behind it is not reachable. */
+  error?: string;
   onConfirm: () => void;
   onCancel: () => void;
   /** Ask the host what became of this operation, when its outcome is in doubt. */
@@ -77,7 +114,7 @@ type Props = {
 };
 
 /** The exact-operation confirmation a publishing or removing operation waits for. Cancel keeps nothing running. */
-export default function OperationDialog({action, worktrees, busy, onConfirm, onCancel, onCheck}: Props) {
+export default function OperationDialog({action, worktrees, busy, error, onConfirm, onCancel, onCheck}: Props) {
   const summary = action ? summarize(action, worktrees) : null;
   return (
     <Dialog open={!!action} onOpenChange={open => !open && onCancel()}>
@@ -86,6 +123,26 @@ export default function OperationDialog({action, worktrees, busy, onConfirm, onC
         <DialogDescription id="scm-dialog-note">
           The checkout is at {action?.head.slice(0, 7)}. This confirmation applies only to the details below.
         </DialogDescription>
+        {summary?.files && (
+          <ul className="scm-dialog-files" aria-label="Files">
+            {summary.files.map(item => (
+              <li key={item.path}>
+                <span className="scm-dialog-path">{item.path}</span>
+                {item.note && <span className="scm-dialog-detail">{item.note}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {summary?.warning && (
+          <p className="scm-dialog-warning" role="note">
+            {summary.warning}
+          </p>
+        )}
+        {error && (
+          <p className="scm-dialog-error" role="alert">
+            {error}
+          </p>
+        )}
         <dl className="scm-dialog-rows">
           {summary?.rows.map(([label, value]) => (
             <div key={label}>

@@ -107,7 +107,15 @@ export default function ScmView({project, session, source, onOpenDiff, onOpenFil
   if (!source.data.repo) return <p className="view-empty view-empty-padded">This folder is not a Git repository.</p>;
 
   const open = (entry: ScmEntry) => (entry.side === 'conflict' ? onOpenFile(entry.path) : onOpenDiff(entry.path, entry.side));
-  const rows = {busy: scm.busy, onOpen: open, onOpenFile, onStage: (entry: ScmEntry) => void scm.stage([entry.path]), onUnstage: (entry: ScmEntry) => void scm.unstage([entry.path])};
+  const rows = {
+    busy: scm.busy,
+    onOpen: open,
+    onOpenFile,
+    onStage: (entry: ScmEntry) => void scm.stage([entry.path]),
+    onUnstage: (entry: ScmEntry) => void scm.unstage([entry.path]),
+    // From Staged changes the staged side goes too; from Changes only the unstaged side does.
+    onDiscard: (entry: ScmEntry) => void scm.discard([entry.path], entry.side === 'staged'),
+  };
   return (
     <div className="scm-view">
       <ScmHeader
@@ -166,7 +174,13 @@ export default function ScmView({project, session, source, onOpenDiff, onOpenFil
               />
             )}
             {groups.changes.length > 0 && (
-              <ScmGroup title="Changes" entries={groups.changes} {...rows} bulk={{label: 'Stage all', aria: 'Stage all changes', run: stageAll}} />
+              <ScmGroup
+                title="Changes"
+                entries={groups.changes}
+                {...rows}
+                bulk={{label: 'Stage all', aria: 'Stage all changes', run: stageAll}}
+                secondary={{label: 'Discard all', aria: 'Discard all changes', run: () => void scm.discard(groups.changes.map(entry => entry.path), false)}}
+              />
             )}
           </>
         )}
@@ -175,7 +189,7 @@ export default function ScmView({project, session, source, onOpenDiff, onOpenFil
         <BranchesSection scm={scm} meta={meta} currentId={session?.worktree_id ?? ''} remote={remote} onRemote={setRemote} />
         <OperationsSection records={scm.records} busy={scm.busy} onInspect={scm.inspectRecord} />
       </div>
-      <OperationDialog action={scm.pending} worktrees={meta?.worktrees ?? []} busy={scm.busy} onConfirm={() => void scm.confirm()} onCancel={scm.cancelPending} onCheck={() => void scm.reconcile()} />
+      <OperationDialog action={scm.pending} worktrees={meta?.worktrees ?? []} busy={scm.busy} error={scm.error?.message} onConfirm={() => void scm.confirm()} onCancel={scm.cancelPending} onCheck={() => void scm.reconcile()} />
     </div>
   );
 }

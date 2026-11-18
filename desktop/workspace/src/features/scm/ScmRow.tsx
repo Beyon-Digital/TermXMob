@@ -1,4 +1,4 @@
-import {File, FileCode2, FileJson, FileText, Image, Minus, Plus, type LucideIcon} from 'lucide-react';
+import {File, FileCode2, FileJson, FileText, Image, Minus, Plus, Undo2, type LucideIcon} from 'lucide-react';
 import type {ScmEntry} from './scm-types';
 
 const BY_EXTENSION: Record<string, LucideIcon> = {
@@ -45,14 +45,17 @@ type Props = {
   onOpenFile: (path: string) => void;
   onStage: (entry: ScmEntry) => void;
   onUnstage: (entry: ScmEntry) => void;
+  /** Ask to discard this file's changes; the host lists what would be lost before anything happens. */
+  onDiscard: (entry: ScmEntry) => void;
 };
 
 /** One changed file: a 32px row. Its actions show on hover and keyboard focus (always on touch). */
-export default function ScmRow({entry, busy, onOpen, onOpenFile, onStage, onUnstage}: Props) {
+export default function ScmRow({entry, busy, onOpen, onOpenFile, onStage, onUnstage, onDiscard}: Props) {
   const {file, path} = entry;
   const Icon = iconFor(entry.name);
   const hasFile = entry.letter !== 'D' && file.reviewable;
   const unstage = entry.side === 'staged';
+  const discardName = (unstage ? 'Discard staged changes ' : 'Discard changes ') + path;
   return (
     <li className="scm-file" data-side={entry.side}>
       <button
@@ -72,6 +75,11 @@ export default function ScmRow({entry, busy, onOpen, onOpenFile, onStage, onUnst
         {hasFile && (
           <button type="button" className="scm-icon" aria-label={'Open file ' + path} title="Open file" onClick={() => onOpenFile(path)}>
             <FileText size={16} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        )}
+        {entry.side !== 'conflict' && (
+          <button type="button" className="scm-icon" aria-label={discardName} title={unstage ? 'Discard staged changes' : 'Discard changes'} disabled={busy} onClick={() => onDiscard(entry)}>
+            <Undo2 size={16} strokeWidth={1.5} aria-hidden="true" />
           </button>
         )}
         {unstage ? (

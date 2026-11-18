@@ -105,6 +105,47 @@
     overflow-wrap: anywhere;
     white-space: pre-wrap;
   }
+  .scm-dialog-files {
+    display: grid;
+    gap: var(--space-4);
+    max-height: 240px;
+    margin: var(--space-16) 0 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+  .scm-dialog-files li {
+    display: grid;
+    gap: 0;
+    min-width: 0;
+    padding: var(--space-4) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .scm-dialog-path {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+    overflow-wrap: anywhere;
+  }
+  .scm-dialog-detail {
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+  .scm-dialog-error {
+    margin: var(--space-16) 0 0;
+    color: var(--danger);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+  .scm-dialog-warning {
+    margin: var(--space-16) 0 0;
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: var(--line-sm);
+  }
   .scm-dialog-actions {
     display: flex;
     flex-wrap: wrap;

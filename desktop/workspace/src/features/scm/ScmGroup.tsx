@@ -9,10 +9,13 @@ type Props = {
   busy: boolean;
   /** The group's bulk action ("Stage all", "Unstage all"), when it has one. */
   bulk?: {label: string; aria: string; run: () => void};
+  /** A second group action ("Discard all"), drawn after the first. */
+  secondary?: {label: string; aria: string; run: () => void};
   onOpen: (entry: ScmEntry) => void;
   onOpenFile: (path: string) => void;
   onStage: (entry: ScmEntry) => void;
   onUnstage: (entry: ScmEntry) => void;
+  onDiscard: (entry: ScmEntry) => void;
 };
 
 /** Up, Down, Home and End move between the rows of a group; Tab leaves it. */
@@ -28,7 +31,7 @@ function moveFocus(event: KeyboardEvent<HTMLUListElement>) {
 }
 
 /** A collapsible group of changed files with its count and bulk action. */
-export default function ScmGroup({title, entries, busy, bulk, onOpen, onOpenFile, onStage, onUnstage}: Props) {
+export default function ScmGroup({title, entries, busy, bulk, secondary, onOpen, onOpenFile, onStage, onUnstage, onDiscard}: Props) {
   const [open, setOpen] = useState(true);
   const id = useId();
   return (
@@ -41,16 +44,19 @@ export default function ScmGroup({title, entries, busy, bulk, onOpen, onOpenFile
             <span className="scm-count">{entries.length}</span>
           </button>
         </h3>
-        {bulk && (
-          <button type="button" className="scm-text-action" aria-label={bulk.aria} disabled={busy} onClick={bulk.run}>
-            {bulk.label}
-          </button>
+        {[bulk, secondary].map(
+          action =>
+            action && (
+              <button key={action.label} type="button" className="scm-text-action" aria-label={action.aria} disabled={busy} onClick={action.run}>
+                {action.label}
+              </button>
+            ),
         )}
       </div>
       {open && (
         <ul className="view-list scm-list" aria-label={title} onKeyDown={moveFocus}>
           {entries.map(entry => (
-            <ScmRow key={entry.key} entry={entry} busy={busy} onOpen={onOpen} onOpenFile={onOpenFile} onStage={onStage} onUnstage={onUnstage} />
+            <ScmRow key={entry.key} entry={entry} busy={busy} onOpen={onOpen} onOpenFile={onOpenFile} onStage={onStage} onUnstage={onUnstage} onDiscard={onDiscard} />
           ))}
         </ul>
       )}
