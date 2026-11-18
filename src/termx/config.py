@@ -255,6 +255,17 @@ class DesktopPrefs:
     retain_virtual_display: bool = False
 
 
+PTY_HOLDER_MODES = ("auto", "held", "direct")
+
+
+@dataclass
+class HostPrefs:
+    """Always-on host behaviour (durability); changed only with the ``host-admin`` scope."""
+
+    keep_awake: bool = False  # keep the machine from idle-sleeping while the host runs
+    pty_holder: str = "auto"  # auto | held | direct: terminals that survive a host restart
+
+
 @dataclass
 class AgentPrefs:
     limits: dict[str, int | None] = field(default_factory=lambda: _agent_limits())
@@ -388,6 +399,7 @@ class HostConfig:
     workspace: WorkspacePrefs = field(default_factory=WorkspacePrefs)
     desktop: DesktopPrefs = field(default_factory=DesktopPrefs)
     agent: AgentPrefs = field(default_factory=AgentPrefs)
+    host: HostPrefs = field(default_factory=HostPrefs)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -406,6 +418,7 @@ class HostConfig:
             },
             "desktop": asdict(self.desktop),
             "agent": asdict(self.agent),
+            "host": asdict(self.host),
         }
 
 
@@ -464,6 +477,7 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
     forwards_raw = raw.get("forwards") if isinstance(raw.get("forwards"), dict) else {}
     workspace_raw = raw.get("workspace") if isinstance(raw.get("workspace"), dict) else {}
     desktop_raw = raw.get("desktop") if isinstance(raw.get("desktop"), dict) else {}
+    host_raw = raw.get("host") if isinstance(raw.get("host"), dict) else {}
     commands_raw = raw.get("commands") if isinstance(raw.get("commands"), list) else []
     directories_raw = raw.get("directories") if isinstance(raw.get("directories"), list) else []
     profiles_raw = tunnels_raw.get("profiles") if isinstance(tunnels_raw.get("profiles"), list) else []
@@ -502,6 +516,10 @@ def config_from_json(raw: dict[str, Any]) -> HostConfig:
             retain_virtual_display=bool(desktop_raw.get("retain_virtual_display", False)),
         ),
         agent=_agent_prefs(raw.get("agent") or {}),
+        host=HostPrefs(
+            keep_awake=bool(host_raw.get("keep_awake", False)),
+            pty_holder=host_raw.get("pty_holder") if host_raw.get("pty_holder") in PTY_HOLDER_MODES else "auto",
+        ),
     )
 
 
@@ -535,6 +553,23 @@ class ConfigStore:
                 self._config.terminal.cwd = validate_cwd(cwd)
             self._save()
             return TerminalPrefs(shell=self._config.terminal.shell, cwd=self._config.terminal.cwd)
+
+    def update_host(self, keep_awake: bool | None = None, pty_holder: str | None = None) -> HostPrefs:
+        if pty_holder is not None and pty_holder not in PTY_HOLDER_MODES:
+            raise ValueError("pty_holder must be one of: " + ", ".join(PTY_HOLDER_MODES))
+        with self._lock:
+            old = self._config.host
+            new = HostPrefs(
+                keep_awake=old.keep_awake if keep_awake is None else bool(keep_awake),
+                pty_holder=old.pty_holder if pty_holder is None else pty_holder,
+            )
+            self._config.host = new
+            try:
+                self._save()
+            except Exception:
+                self._config.host = old
+                raise
+            return HostPrefs(keep_awake=new.keep_awake, pty_holder=new.pty_holder)
 
     def update_agent(self, updates: dict[str, Any]) -> AgentPrefs:
         if not isinstance(updates, dict):

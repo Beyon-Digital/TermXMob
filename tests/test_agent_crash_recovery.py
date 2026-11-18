@@ -364,3 +364,53 @@ def test_confirmed_missing_result_dispatches_call_instead_of_dropping_it(ledger,
     asyncio.run(manager._resume_execution(task["id"], checkpoint, "confirm_required"))
     assert executed == ["effect-1"]
     assert store.get_task(task["id"])["status"] == "awaiting_approval"
+
+
+def test_reattaching_terminals_and_cli_sessions_never_resumes_a_recovering_task_twice(ledger, monkeypatch) -> None:
+    """The lifespan re-adopts held terminals and CLI sessions, then resumes each ``recovering`` task once.
+
+    Nothing in re-adoption (``host_status.start`` / ``CliSessionService.recover``) may touch task state: a task
+    that is waiting on a CLI session (task-graph ``cli`` executors arrive with the orchestration slice) must be
+    resumed by the one task-recovery pass and by nothing else, however often the re-adoption path runs.
+    (Nothing is held in this suite, so re-adoption is a no-op here; ``test_cli_sessions_durability`` covers a real one.)
+    """
+    from fastapi.testclient import TestClient
+
+    from termx.app import AppState, create_app
+
+    store, _ = ledger
+    task = _task(store)
+    _checkpoint(store, task["id"], "committed")
+    state = AppState(passcode="host-secret", agent_store=store, credentials=CredentialStore(memory={}),
+                     adapter_factory=_unexpected_adapter)
+    assert store.get_task(task["id"])["status"] == "recovering"
+    resumed: list[str] = []
+
+    def resume(task_id: str, checkpoint: dict[str, Any], decision: str):
+        resumed.append(task_id)
+
+        async def finish() -> None:
+            store.update_task(task_id, status="completed")
+
+        return finish()
+
+    monkeypatch.setattr(state.agent, "_resume_execution", resume)
+    import time
+
+    with TestClient(create_app(state), base_url="http://localhost"):
+        deadline = time.monotonic() + 8
+        while not resumed and time.monotonic() < deadline:
+            time.sleep(0.05)  # the lifespan's task-recovery pass runs on the app's own loop
+        before = len(store.events(task["id"]))
+
+        async def again() -> None:
+            assert state.sessions.reattach() == []
+            await state.cli_sessions.recover()
+            await state.cli_sessions.recover()
+
+        asyncio.run(again())
+        time.sleep(0.3)
+        assert state.agent.pending_recoveries() == []
+        assert resumed == [task["id"]], "the task was resumed exactly once"
+        assert store.get_task(task["id"])["status"] == "completed"
+        assert len(store.events(task["id"])) == before, "re-adoption wrote nothing to the task"

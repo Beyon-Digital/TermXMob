@@ -129,6 +129,7 @@ HOST_MEDIATED_CAPABILITIES = frozenset({"computer.control", "memory.write", "ski
 # `net.outbound:<host>` so a capability deny (bots deny net.outbound:any) still stops them, but the sandbox envelope
 # neither grants nor limits them, and approving one must never widen a sandbox's network access.
 HOST_MEDIATED_TOOLS = frozenset({"web_fetch", "web_search"})
+HOST_MEDIATED_CAPABILITIES |= frozenset({"cli.session.start", "cli.session.control"})
 # Capabilities remembered allow rules may never imply by side effect.
 UNGRANTABLE_CAPABILITIES = frozenset(
     {

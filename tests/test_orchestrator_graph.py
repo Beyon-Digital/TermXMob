@@ -312,7 +312,7 @@ def test_rollup_counts_percent_and_usage(tmp_path):
         workspace, owner, manager, ledger, graph, _ = setup(tmp_path)
         try:
             assert graph.board(owner)['rollup'] == {'total': 0, 'counts': {s: 0 for s in
-                ('pending', 'running', 'stalled', 'completed', 'failed', 'cancelled')},
+                ('pending', 'running', 'blocked', 'stalled', 'completed', 'failed', 'cancelled')},
                 'percent_complete': 0, 'tokens': 0, 'cost_usd': None}
             nodes = by_title(graph.plan(owner, [spec('a'), spec('b', 'BOOM'), spec('c', 'later', ['a', 'b']), spec('d', 'HOLD')]))
             await graph.start_ready(owner)
@@ -320,7 +320,7 @@ def test_rollup_counts_percent_and_usage(tmp_path):
             await settle(ledger, graph, owner, nodes['B']['id'], 'failed')
             rollup = graph.board(owner)['rollup']
             assert rollup['total'] == 4 and rollup['percent_complete'] == 25
-            assert rollup['counts'] == {'pending': 1, 'running': 1, 'stalled': 0, 'completed': 1, 'failed': 1, 'cancelled': 0}
+            assert rollup['counts'] == {'pending': 1, 'running': 1, 'blocked': 0, 'stalled': 0, 'completed': 1, 'failed': 1, 'cancelled': 0}
             assert rollup['tokens'] >= 15
             snapshot = workspace.orchestrator.snapshot(owner)
             assert snapshot['rollup'] == graph.board(owner)['rollup'] and len(snapshot['nodes']) == 4
