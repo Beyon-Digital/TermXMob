@@ -335,6 +335,31 @@ type BotTemplate {
   instructions: String!
 }
 
+type BrowserSite {
+  id: String!
+  project_id: String!
+  origin: String!
+  start_url: String!
+  title: String!
+  profile_id: String!
+  open_mode: String!
+  pinned: Boolean!
+  position: Int!
+  visit_count: Int!
+  last_visited: Float
+  frecency: Float!
+  tab_id: String
+  note_count: Int!
+  created: Float!
+  updated: Float!
+}
+
+type BrowserSiteEvent {
+  type: String!
+  id: String
+  site: BrowserSite
+}
+
 input CommandInput {
   name: String!
   command: String!
@@ -1510,6 +1535,7 @@ type SkippedSkillFile {
 
 type Subscription {
   activity_events: ActivityEvent!
+  browser_site_events: BrowserSiteEvent!
   agent_task_events(task_id: String!, after: Int! = 0): TaskEventEnvelope!
   notification_events: HostNotification!
 }

@@ -68,7 +68,8 @@ def public(row,notes=0,*,now=None):
     site=dict(zip(SITE_COLUMNS.split(','),row[:16]))
     now=time() if now is None else now
     site['pinned']=bool(site['pinned'])
-    site['frecency']=round(current_frecency(site.pop('rank'),now),4) if site['last_visited'] else 0.0
+    rank=site.pop('rank')
+    site['frecency']=round(current_frecency(rank,now),4) if site['last_visited'] else 0.0
     site['note_count']=notes
     return site
 

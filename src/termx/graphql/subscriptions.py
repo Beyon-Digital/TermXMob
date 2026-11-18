@@ -21,6 +21,8 @@ from termx.workspace.public_events import context_task_events
 
 Ctx = Info[TermxContext, None]
 
+BROWSER_SITE_POLL_S = 1.5
+
 
 @strawberry.type
 class Subscription:
@@ -45,6 +47,36 @@ class Subscription:
                 yield T.ActivityEvent.wrap({"type": "activity.remove", "id": item_id})
             last = current
             await asyncio.sleep(2.0)
+
+    @strawberry.subscription
+    async def browser_site_events(self, info: Ctx) -> AsyncGenerator[T.BrowserSiteEvent, None]:
+        """Saved-site changes for the caller only: a snapshot of upserts, then poll-and-diff of upserts, visits, removals."""
+        ctx = info.context
+        state = ctx.state
+
+        def principal() -> str:
+            try:
+                ctx.require('desktop-view')
+                state.authorization.require(ctx.secret, 'desktop-view')
+            except HTTPException as exc:
+                raise to_graphql_error(exc) from exc
+            from termx.browser.router import principal_for
+
+            return principal_for(state, ctx.secret)
+
+        owner = principal()
+        from termx.browser.sites import diff_sites
+
+        last: dict[str, dict] = {}
+        while True:
+            # Authority is rechecked every cycle: a revoked or narrowed token stops receiving sites.
+            if principal() != owner:
+                fail(403, "browser principal changed")
+            current = {site["id"]: site for site in state.browser.sites(owner)}
+            for event in diff_sites(last, current):
+                yield T.BrowserSiteEvent.wrap(event)
+            last = current
+            await asyncio.sleep(BROWSER_SITE_POLL_S)
 
     @strawberry.subscription
     async def agent_task_events(

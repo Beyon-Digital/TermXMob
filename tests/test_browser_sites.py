@@ -3,6 +3,7 @@
 No Chromium: pages are fakes, which is all `BrowserService` needs to record navigations and open tabs.
 """
 import asyncio
+import os
 import sqlite3
 import pytest
 from termx.browser import sites as sites_module
@@ -401,3 +402,33 @@ def test_diff_events_distinguish_upserts_visits_and_removals():
     renamed = {**visited, 'title': 'B', 'visit_count': 2}
     assert sites_module.diff_sites({'a': visited}, {'a': renamed})[0]['type'] == 'browser.site.upserted'
     assert sites_module.diff_sites({'a': visited}, {}) == [{'type': 'browser.site.removed', 'id': 'a'}]
+
+
+@pytest.mark.skipif(not os.environ.get('PLAYWRIGHT_BROWSERS_PATH'), reason='managed Chromium artifact required')
+def test_real_chromium_counts_the_visit_and_an_app_tab_reopens_after_a_host_restart(tmp_path):
+    from test_managed_browser import website
+    async def run():
+        server, site = await website()
+        service = BrowserService(tmp_path, development_origins=[site])
+        try:
+            profile = service.create_profile('owner', 'project', 'Fixture')
+            saved = service.save_site('owner', profile['id'], site + '/', title='Fixture app', open_mode='app')
+            opened = await service.open_site(saved['id'], 'owner', 'session')
+            assert opened['tab']['title'] == 'Fixture browser' and service.site(saved['id'], 'owner')['visit_count'] == 1
+            await service._pages[opened['tab']['id']].goto(site + '/next', wait_until='domcontentloaded')
+            for _ in range(50):
+                if service.get(opened['tab']['id'], 'owner')['url'].endswith('/next'): break
+                await asyncio.sleep(.1)
+            assert service.get(opened['tab']['id'], 'owner')['url'].endswith('/next')
+            await service.close()
+            restarted = BrowserService(tmp_path, development_origins=[site])
+            try:
+                assert restarted.get(opened['tab']['id'], 'owner')['state'] == 'closed'
+                reopened = await restarted.open_site(saved['id'], 'owner', 'session')
+                assert reopened['tab']['id'] != opened['tab']['id'] and reopened['tab']['url'].endswith('/next') and reopened['reused'] is False
+                assert restarted.site(saved['id'], 'owner')['tab_id'] == reopened['tab']['id']
+            finally:
+                await restarted.close()
+        finally:
+            server.close(); await server.wait_closed()
+    asyncio.run(run())
