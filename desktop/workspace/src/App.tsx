@@ -130,15 +130,18 @@ import {
 } from 'lucide-react';
 import {Button} from './components/ui/button';
 import DockWorkspace from './components/DockWorkspace';
+import {loadBindings, defaults, type Bindings} from './lib/keybindings';
 import {
-  defaults,
-  labels,
-  strokeMatches,
-  loadBindings,
-  protectedSurface,
-  type Bindings,
-  type CommandId,
-} from './lib/keybindings';
+  commandAvailable,
+  findCommand,
+  paletteEntries,
+  type BrowserCommand,
+  type Command as RegisteredCommand,
+  type CommandActions,
+  type CommandContext,
+  type CommandInvocation,
+} from './shell/commands';
+import {useShortcuts} from './shell/use-shortcuts';
 import {
   layouts,
   validateDockMap,
@@ -221,19 +224,6 @@ type LayoutSnapshot = {
   sidebarWidth: number;
   rightWidth: number;
 };
-const agentDockCommands = new Set<CommandId>([
-  'closeTab',
-  'reopenTab',
-  'right',
-  'bottom',
-  'focus',
-  'undoLayout',
-  'resetLayout',
-  'savedLayouts',
-  'browserNew',
-  'browserClose',
-  'browserReopen',
-]);
 const projectSettingsCategories = new Set([
   'agents',
   'extensions',
@@ -698,7 +688,7 @@ export default function App() {
   }, [selected, session?.id, session?.turns]);
   const undo = useRef<LayoutSnapshot[]>([]),
     focusRestore = useRef<LayoutSnapshot | null>(null),
-    browserCommand = useRef<CommandId | null>(null),
+    browserCommand = useRef<BrowserCommand | null>(null),
     quickCommand = useRef(false);
   const [quickNonce, setQuickNonce] = useState(0);
   const sidebarScroll = useRef<HTMLDivElement>(null),
@@ -1329,115 +1319,62 @@ export default function App() {
     setRight(false);
     setBottom(false);
   }
-  function runCommand(id: CommandId, explicit = false) {
-    if (workspace !== 'agent' && agentDockCommands.has(id)) {
-      if (!explicit) return;
+  const commandContext: CommandContext = {workspace, hostAdmin: !!auth?.principal.scopes.includes('host-admin')};
+  const commandActions: CommandActions = {
+    setManager,
+    setWorkspace: value => setWorkspace(value),
+    openWorkflows: () => {
+      setWorkspaceState('agent');
+      setManager('workflows');
+    },
+    openMainAgent: () => void openMainAgent(),
+    openNewChat: () => openNewChat(),
+    refreshConversations: () => void load(),
+    lockWorkspace: () => void beginLock(),
+    stopHost: () => setHostStopOpen(true),
+    chooseLayout: value => chooseLayout(value),
+    openSurface,
+    focusPanel,
+    quickOpen: () => {
+      quickCommand.current = true;
+      setQuickNonce(value => value + 1);
+      setManager('');
+      chooseLayout('workbench');
+    },
+    browserCommand: (command, explicit) => {
+      if (explicit) {
+        browserCommand.current = command;
+        setManager('');
+        chooseLayout('browser');
+      } else window.dispatchEvent(new CustomEvent('termx-browser-command', {detail: {command}}));
+    },
+    panelCommand: command => window.dispatchEvent(new CustomEvent('termx-panel-command', {detail: {command}})),
+    toggleFullscreen: () => void toggleFullscreen(),
+    openSavedLayouts: () => setLayoutsOpen(true),
+    toggleSidebar: () => {
+      rememberLayout();
+      window.dispatchEvent(new Event('termx-sidebar-toggle'));
+    },
+    toggleSidePanel: () => {
+      rememberLayout();
+      setRight(value => !value);
+    },
+    toggleBottomPanel: () => {
+      rememberLayout();
+      setBottom(value => !value);
+    },
+    togglePalette: () => setPalette(value => !value),
+    toggleFocusMode: toggleFocus,
+    undoLayout,
+    resetLayout,
+  };
+  function runCommand(command: RegisteredCommand, invocation: CommandInvocation) {
+    if (!commandAvailable(command, commandContext)) {
+      if (command.when !== 'agent' || invocation.source !== 'palette') return;
       setWorkspace('agent');
     }
-    if (
-      [
-        'chat',
-        'workbench',
-        'browser',
-        'review',
-        'computer',
-        'artifacts',
-        'focusConversation',
-        'focusEditor',
-        'focusBrowser',
-        'focusComputer',
-      ].includes(id)
-    )
-      setManager('');
-    switch (id) {
-      case 'quickFile':
-        quickCommand.current = true;
-        setQuickNonce(value => value + 1);
-        setManager('');
-        chooseLayout('workbench');
-        break;
-      case 'browserNew':
-      case 'browserClose':
-      case 'browserReopen':
-        if (explicit) {
-          browserCommand.current = id;
-          setManager('');
-          chooseLayout('browser');
-        } else window.dispatchEvent(new CustomEvent('termx-browser-command', {detail: {command: id}}));
-        break;
-      case 'chat':
-        chooseLayout('chat');
-        break;
-      case 'workbench':
-        chooseLayout('workbench');
-        break;
-      case 'browser':
-        openSurface('browser');
-        break;
-      case 'review':
-        openSurface('review');
-        break;
-      case 'terminal':
-        openSurface('terminal');
-        break;
-      case 'computer':
-        openSurface('computer');
-        break;
-      case 'artifacts':
-        openSurface('artifacts');
-        break;
-      case 'closeTab':
-      case 'reopenTab':
-        window.dispatchEvent(
-          new CustomEvent('termx-panel-command', {detail: {command: id === 'closeTab' ? 'close' : 'reopen'}}),
-        );
-        break;
-      case 'fullscreen':
-        void toggleFullscreen();
-        break;
-      case 'savedLayouts':
-        setLayoutsOpen(true);
-        break;
-      case 'left':
-        rememberLayout();
-        window.dispatchEvent(new Event('termx-sidebar-toggle'));
-        break;
-      case 'right':
-        rememberLayout();
-        setRight(value => !value);
-        break;
-      case 'bottom':
-        rememberLayout();
-        setBottom(value => !value);
-        break;
-      case 'palette':
-        setPalette(value => !value);
-        break;
-      case 'newConversation':
-        openNewChat();
-        break;
-      case 'focus':
-        toggleFocus();
-        break;
-      case 'undoLayout':
-        undoLayout();
-        break;
-      case 'resetLayout':
-        resetLayout();
-        break;
-      case 'focusConversation':
-        focusPanel('conversation');
-        break;
-      case 'focusEditor':
-        focusPanel('editor');
-        break;
-      case 'focusBrowser':
-        focusPanel('browser');
-        break;
-      case 'focusComputer':
-        focusPanel('computer');
-        break;
-    }
+    if (command.leavesManager) setManager('');
+    command.run(commandActions, invocation);
   }
 
   useEffect(() => {
@@ -1560,69 +1497,19 @@ export default function App() {
         setHomeRequest(value => value + 1);
     },
   });
-  useEffect(() => {
-    let prefix = '',
-      pending: ReturnType<typeof setTimeout> | undefined;
-    const shortcuts = (event: KeyboardEvent) => {
-      if (
-        lockedNow.current ||
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.repeat ||
-        protectedSurface(event.target)
-      )
-        return;
-      if (workspace === 'agent' && event.key === 'Escape' && focusRestore.current) {
-        event.preventDefault();
-        toggleFocus();
-        return;
-      }
-      const entries = Object.entries(bindings) as [CommandId, string][];
-      if (prefix) {
-        const candidate = entries.find(([, binding]) => {
-          const steps = binding.trim().split(/\s+/);
-          return steps.length === 2 && steps[0] === prefix && strokeMatches(steps[1], event);
-        });
-        clearTimeout(pending);
-        prefix = '';
-        if (candidate) {
-          event.preventDefault();
-          runCommand(candidate[0]);
-          return;
-        }
-      }
-      const match = entries.find(([, binding]) => strokeMatches(binding.trim().split(/\s+/)[0], event));
-      if (!match) return;
-      event.preventDefault();
-      const stroke = match[1].trim().split(/\s+/)[0],
-        chord = entries.some(([, binding]) => binding.startsWith(stroke + ' '));
-      if (chord) {
-        prefix = stroke;
-        pending = setTimeout(() => {
-          prefix = '';
-          const single = entries.find(([, binding]) => binding === stroke);
-          if (single) runCommand(single[0]);
-        }, 900);
-      } else runCommand(match[0]);
-    };
-    window.addEventListener('keydown', shortcuts);
-    return () => {
-      clearTimeout(pending);
-      window.removeEventListener('keydown', shortcuts);
-    };
-  }, [
+  useShortcuts({
     bindings,
-    layout,
-    dock,
-    left,
-    right,
-    bottom,
-    dockGeometry,
-    sidebarWidth,
-    rightWidth,
-    workspace,
-    manager,
-  ]);
+    suspended: () => lockedNow.current,
+    run: (id, terminalFocused) => {
+      const command = findCommand(id);
+      if (command) runCommand(command, {source: 'shortcut', terminalFocused});
+    },
+    escape: () => {
+      if (workspace !== 'agent' || !focusRestore.current) return false;
+      toggleFocus();
+      return true;
+    },
+  });
   useEffect(() => {
     if (auth) localStorage.setItem('termx-collapsed:' + auth.principal.id, JSON.stringify(collapsed));
   }, [collapsed, auth?.principal.id]);
@@ -3446,133 +3333,10 @@ export default function App() {
               Use commands or keyboard shortcuts to arrange your workspace.
             </DialogDescription>
             <WorkspaceCommands
-              commands={[
-                {
-                  id: 'lock',
-                  label: 'Lock workspace',
-                  keywords: 'security session pause hide',
-                  run: () => {
-                    setPalette(false);
-                    void beginLock();
-                  },
-                },
-                ...(auth.principal.scopes.includes('host-admin')
-                  ? [
-                      {
-                        id: 'stop-host',
-                        label: 'Stop this host',
-                        keywords: 'shutdown disconnect terminals schedules',
-                        run: () => {
-                          setPalette(false);
-                          setHostStopOpen(true);
-                        },
-                      },
-                    ]
-                  : []),
-                {
-                  id: 'main-agent',
-                  label: 'Open main agent',
-                  keywords: 'home primary orchestrator coordinator chat',
-                  run: () => {
-                    void openMainAgent();
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'control-plane',
-                  label: 'Projects',
-                  keywords: 'overview projects runs activity operations dashboard',
-                  run: () => {
-                    setManager('projects');
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'workflows',
-                  label: 'Workflows',
-                  keywords: 'custom workflow scripts runners history',
-                  run: () => {
-                    setWorkspaceState('agent');
-                    setManager('workflows');
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'refresh',
-                  label: 'Refresh conversations',
-                  keywords: 'chat sessions reconnect',
-                  run: () => {
-                    void load();
-                    setPalette(false);
-                  },
-                },
-                ...settingsCategories.map(({id: section, label}) => ({
-                  id: 'manager-' + section,
-                  label,
-                  keywords: 'settings manager ' + section,
-                  run: () => {
-                    setManager(section);
-                    setPalette(false);
-                  },
-                })),
-                {
-                  id: 'manager-shortcuts',
-                  label: 'Edit keyboard shortcuts',
-                  keywords: 'settings manager shortcuts keybindings preferences',
-                  run: () => {
-                    setManager('preferences');
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'workspace-agent',
-                  label: 'Open Agent workspace',
-                  keywords: 'agent chat conversation workspace',
-                  run: () => {
-                    setWorkspace('agent');
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'workspace-studio',
-                  label: 'Open Studio workspace',
-                  keywords: 'studio creative image video cinema workspace',
-                  run: () => {
-                    setWorkspace('studio');
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'workspace-data',
-                  label: 'Open Data workspace',
-                  keywords: 'database bi analytics queries reports dashboards copilot workspace',
-                  run: () => {
-                    setWorkspace('data');
-                    setPalette(false);
-                  },
-                },
-                {
-                  id: 'manager-media',
-                  label: 'Media studio & artifacts',
-                  keywords: 'media studio image video cinema lip sync files artifacts',
-                  run: () => {
-                    setWorkspace('studio');
-                    setPalette(false);
-                  },
-                },
-                ...(Object.keys(labels) as CommandId[])
-                  .filter(id => workspace === 'agent' || (!agentDockCommands.has(id) && id !== 'voiceTalk'))
-                  .map(id => ({
-                    id,
-                    label: labels[id],
-                    keywords: 'command view layout ' + id,
-                    shortcut: bindings[id],
-                    run: () => {
-                      runCommand(id, true);
-                      setPalette(false);
-                    },
-                  })),
-              ]}
+              commands={paletteEntries(commandContext, bindings, command => {
+                runCommand(command, {source: 'palette', terminalFocused: false});
+                setPalette(false);
+              })}
             />
           </DialogContent>
         </Dialog>
