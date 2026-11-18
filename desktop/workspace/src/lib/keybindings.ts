@@ -15,7 +15,10 @@ const ids = Object.keys(keyedSpecs) as CommandId[];
 
 export const defaults = Object.fromEntries(ids.map(id => [id, keyedSpecs[id].defaultKeys])) as Bindings;
 
-export const labels = Object.fromEntries(ids.map(id => [id, keyedSpecs[id].title])) as Record<CommandId, string>;
+export const labels = Object.fromEntries(ids.map(id => [id, keyedSpecs[id].title])) as Record<
+  CommandId,
+  string
+>;
 
 type StrokeOptions = {
   /**
@@ -32,12 +35,18 @@ export function strokeMatches(stroke: string, event: KeyboardEvent, options: Str
     .map(part => part.trim());
   const key = pieces.pop();
   const mod = pieces.includes('mod');
-  const commandKey = options.terminal ? (isMac() ? event.metaKey : event.ctrlKey) : event.ctrlKey || event.metaKey;
+  const commandKey = options.terminal
+    ? isMac()
+      ? event.metaKey
+      : event.ctrlKey
+    : event.ctrlKey || event.metaKey;
   return (
     event.key.toLowerCase() === key &&
     event.shiftKey === pieces.includes('shift') &&
     event.altKey === pieces.includes('alt') &&
-    (mod ? commandKey : event.ctrlKey === pieces.includes('ctrl') && event.metaKey === pieces.includes('meta'))
+    (mod
+      ? commandKey
+      : event.ctrlKey === pieces.includes('ctrl') && event.metaKey === pieces.includes('meta'))
   );
 }
 

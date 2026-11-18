@@ -12,7 +12,10 @@ const MessageContext = createContext<ErrorMessage | null>(null);
 
 export function ErrorProvider({children}: {children: ReactNode}) {
   const [error, setError] = useState('');
-  const report = useCallback<Report>(reason => setError(reason instanceof Error ? reason.message : String(reason)), []);
+  const report = useCallback<Report>(
+    reason => setError(reason instanceof Error ? reason.message : String(reason)),
+    [],
+  );
   const clearError = useCallback(() => setError(''), []);
   const message = useMemo(() => ({error, clearError}), [error, clearError]);
   return (

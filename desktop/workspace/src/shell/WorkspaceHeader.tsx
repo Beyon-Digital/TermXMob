@@ -269,10 +269,7 @@ export default function WorkspaceHeader(props: Props) {
             </button>
             <hr />
             <span className="workspace-menu-label">Open view</span>
-            <button
-              data-close-menu
-              onClick={onOpenFiles}
-            >
+            <button data-close-menu onClick={onOpenFiles}>
               <Code2 size={14} />
               Files & code
             </button>
@@ -303,11 +300,7 @@ export default function WorkspaceHeader(props: Props) {
             <span className="workspace-menu-label" id="sidebar-behavior-label">
               Sidebar
             </span>
-            <div
-              role="group"
-              aria-labelledby="sidebar-behavior-label"
-              className="workspace-menu-choices"
-            >
+            <div role="group" aria-labelledby="sidebar-behavior-label" className="workspace-menu-choices">
               {(['pinned', 'collapsed', 'hover'] as const).map(mode => (
                 <button
                   key={mode}

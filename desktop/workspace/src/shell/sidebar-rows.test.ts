@@ -47,7 +47,11 @@ describe('buildSidebarRows, by recent activity', () => {
   ];
 
   it('puts pinned conversations first, then the most recent, and leaves out the main agent', () => {
-    expect(keys(buildSidebarRows({...base, sessions, primaryId: 'main'}))).toEqual(['pinned-old', 'new', 'old']);
+    expect(keys(buildSidebarRows({...base, sessions, primaryId: 'main'}))).toEqual([
+      'pinned-old',
+      'new',
+      'old',
+    ]);
   });
 
   it('searches titles and project names, ignoring case', () => {
@@ -57,7 +61,9 @@ describe('buildSidebarRows, by recent activity', () => {
       query: 'API SERVER',
     });
     expect(keys(rows)).toEqual(['a']);
-    expect(keys(buildSidebarRows({...base, sessions: [chat('a', {title: 'Fix login'})], query: 'LOGIN'}))).toEqual(['a']);
+    expect(
+      keys(buildSidebarRows({...base, sessions: [chat('a', {title: 'Fix login'})], query: 'LOGIN'})),
+    ).toEqual(['a']);
   });
 
   it('filters by running and needs-attention state, preferring the open conversation’s newer status', () => {
@@ -68,10 +74,21 @@ describe('buildSidebarRows, by recent activity', () => {
       chat('stale', {latest_status: 'completed'}),
     ];
     expect(keys(buildSidebarRows({...base, sessions: list, sessionFilter: 'running'}))).toEqual(['working']);
-    expect(keys(buildSidebarRows({...base, sessions: list, sessionFilter: 'attention'}))).toEqual(['blocked']);
+    expect(keys(buildSidebarRows({...base, sessions: list, sessionFilter: 'attention'}))).toEqual([
+      'blocked',
+    ]);
     expect(
-      keys(buildSidebarRows({...base, sessions: list, sessionFilter: 'running', session: {id: 'stale', latest_status: 'running'}})),
-    ).toEqual(['working', 'stale'].sort((a, b) => list.findIndex(c => c.id === a) - list.findIndex(c => c.id === b)));
+      keys(
+        buildSidebarRows({
+          ...base,
+          sessions: list,
+          sessionFilter: 'running',
+          session: {id: 'stale', latest_status: 'running'},
+        }),
+      ),
+    ).toEqual(
+      ['working', 'stale'].sort((a, b) => list.findIndex(c => c.id === a) - list.findIndex(c => c.id === b)),
+    );
   });
 });
 
@@ -95,7 +112,10 @@ describe('buildSidebarRows, grouped by project', () => {
   });
 
   it('puts pinned projects first', () => {
-    expect(keys(buildSidebarRows({...grouped, pinnedProjects: ['web']})).slice(0, 2)).toEqual(['project:web', 'w1']);
+    expect(keys(buildSidebarRows({...grouped, pinnedProjects: ['web']})).slice(0, 2)).toEqual([
+      'project:web',
+      'w1',
+    ]);
   });
 
   it('hides a collapsed group’s conversations unless searching', () => {
@@ -112,12 +132,26 @@ describe('buildSidebarRows, grouped by project', () => {
   it('shows the scoped project even when it has no conversations, but only with no filter or search', () => {
     const rows = buildSidebarRows({...grouped, sessions: [chat('loose')], scopeProjectId: 'web'});
     expect(keys(rows)).toContain('project:web');
-    expect(keys(buildSidebarRows({...grouped, sessions: [chat('loose')], scopeProjectId: 'web', query: 'l'}))).not.toContain('project:web');
-    expect(keys(buildSidebarRows({...grouped, sessions: [chat('loose')], scopeProjectId: 'web', sessionFilter: 'running'}))).not.toContain('project:web');
+    expect(
+      keys(buildSidebarRows({...grouped, sessions: [chat('loose')], scopeProjectId: 'web', query: 'l'})),
+    ).not.toContain('project:web');
+    expect(
+      keys(
+        buildSidebarRows({
+          ...grouped,
+          sessions: [chat('loose')],
+          scopeProjectId: 'web',
+          sessionFilter: 'running',
+        }),
+      ),
+    ).not.toContain('project:web');
   });
 
   it('groups by an explicit group id when the host sends one', () => {
-    const rows = buildSidebarRows({...grouped, sessions: [chat('g', {project_id: 'api', group_id: 'web'} as Partial<Session>)]});
+    const rows = buildSidebarRows({
+      ...grouped,
+      sessions: [chat('g', {project_id: 'api', group_id: 'web'} as Partial<Session>)],
+    });
     expect(keys(rows)).toEqual(['project:web', 'g', 'project:api']);
   });
 
@@ -135,7 +169,11 @@ describe('sessionListPreview', () => {
   it('shows the latest turn’s result, stripped of markdown, and never more than 200 characters', () => {
     const turns = [
       {sequence: 1, prompt: 'first'},
-      {sequence: 2, prompt: 'second', task: {result: '## Done\n- **bold** item\n```ts\ncode\n```\nand `inline` text'}},
+      {
+        sequence: 2,
+        prompt: 'second',
+        task: {result: '## Done\n- **bold** item\n```ts\ncode\n```\nand `inline` text'},
+      },
     ] as unknown as Session['turns'];
     expect(sessionListPreview({draft_text: '', turns})).toBe('Done **bold** item code and inline text');
     const long = [{sequence: 1, prompt: 'x'.repeat(500)}] as unknown as Session['turns'];
@@ -143,7 +181,9 @@ describe('sessionListPreview', () => {
   });
 
   it('falls back to the prompt, then to nothing', () => {
-    expect(sessionListPreview({draft_text: '', turns: [{sequence: 1, prompt: 'hello'}] as never})).toBe('hello');
+    expect(sessionListPreview({draft_text: '', turns: [{sequence: 1, prompt: 'hello'}] as never})).toBe(
+      'hello',
+    );
     expect(sessionListPreview({draft_text: '', turns: []})).toBe('');
   });
 });

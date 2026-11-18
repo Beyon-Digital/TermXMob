@@ -81,7 +81,8 @@ export default function AuthGate({children}: {children: ReactNode}) {
 
   async function acceptAuth(value: Auth) {
     const changed =
-      authNow.current?.principal.id !== value.principal.id || authNow.current?.session_id !== value.session_id;
+      authNow.current?.principal.id !== value.principal.id ||
+      authNow.current?.session_id !== value.session_id;
     if (changed) authEpoch.current++;
     const generation = authEpoch.current;
     authNow.current = value;
@@ -265,8 +266,7 @@ export default function AuthGate({children}: {children: ReactNode}) {
     };
   }, []);
   const value = useMemo<AuthContextValue | null>(
-    () =>
-      auth && {auth, authEpoch, authNow, fence, locked, lockedNow, beginLock, openHostStop, onUnlocked},
+    () => auth && {auth, authEpoch, authNow, fence, locked, lockedNow, beginLock, openHostStop, onUnlocked},
     [auth, authEpoch, authNow, fence, locked, beginLock, openHostStop, onUnlocked],
   );
 

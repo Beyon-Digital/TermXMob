@@ -26,7 +26,17 @@ vi.mock('../../components/AddProjectDialog', () => ({
   },
 }));
 vi.mock('../../components/HostPathPicker', () => ({
-  HostPathField: ({label, value, onChange, disabled}: {label: string; value: string; onChange: (v: string) => void; disabled: boolean}) => (
+  HostPathField: ({
+    label,
+    value,
+    onChange,
+    disabled,
+  }: {
+    label: string;
+    value: string;
+    onChange: (v: string) => void;
+    disabled: boolean;
+  }) => (
     <label>
       {label}
       <input value={value} disabled={disabled} onChange={event => onChange(event.target.value)} />
@@ -44,7 +54,9 @@ describe('CommandPaletteDialog', () => {
   const agent = {workspace: 'agent' as const, hostAdmin: true};
 
   it('lists exactly the registry for the context', () => {
-    render(<CommandPaletteDialog open onOpenChange={() => {}} context={agent} bindings={{}} onRun={() => {}} />);
+    render(
+      <CommandPaletteDialog open onOpenChange={() => {}} context={agent} bindings={{}} onRun={() => {}} />,
+    );
     const rows = screen.getAllByRole('button').filter(button => button.classList.contains('command-row'));
     expect(rows).toHaveLength(commands.filter(command => commandAvailable(command, agent)).length);
     expect(rows.map(row => row.querySelector('span')?.textContent)).toEqual(
@@ -65,14 +77,20 @@ describe('CommandPaletteDialog', () => {
     expect(screen.queryByRole('button', {name: /Stop this host/})).toBeNull();
     expect(screen.queryByRole('button', {name: /Toggle bottom panel/})).toBeNull();
     expect(screen.getByRole('button', {name: /Open Settings/})).toBeInTheDocument();
-    expect(within(screen.getByRole('button', {name: /Workspace commands/})).getByText(/P/, {selector: 'kbd'})).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('button', {name: /Workspace commands/})).getByText(/P/, {selector: 'kbd'}),
+    ).toBeInTheDocument();
   });
 
   it('runs the chosen command and then closes', () => {
     const onRun = vi.fn();
     const onOpenChange = vi.fn();
-    render(<CommandPaletteDialog open onOpenChange={onOpenChange} context={agent} bindings={{}} onRun={onRun} />);
-    fireEvent.change(screen.getByRole('searchbox', {name: 'Search commands'}), {target: {value: 'refresh conversations'}});
+    render(
+      <CommandPaletteDialog open onOpenChange={onOpenChange} context={agent} bindings={{}} onRun={onRun} />,
+    );
+    fireEvent.change(screen.getByRole('searchbox', {name: 'Search commands'}), {
+      target: {value: 'refresh conversations'},
+    });
     fireEvent.keyDown(screen.getByRole('searchbox', {name: 'Search commands'}), {key: 'Enter'});
     expect(onRun).toHaveBeenCalledWith(findCommand('refresh'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -112,7 +130,9 @@ describe('RecoverWindowsDialog', () => {
         onReopen={onReopen}
       />,
     );
-    expect(screen.getByText(/Fix the build · 2 unsaved files · 1 drafts · 3 unsaved artifacts/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Fix the build · 2 unsaved files · 1 drafts · 3 unsaved artifacts/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Preserved workspace · 2 unsaved files/)).toBeInTheDocument();
     const [first, second] = screen.getAllByRole('button', {name: 'Reopen window'});
     expect(second).toBeDisabled();
@@ -125,7 +145,15 @@ describe('LayoutsDialog', () => {
   it('shows the saved layouts and passes saving through', () => {
     const onSave = vi.fn();
     render(
-      <LayoutsDialog open onOpenChange={() => {}} presets={[]} onSave={onSave} onRestore={() => {}} onRemove={() => {}} onReset={() => {}} />,
+      <LayoutsDialog
+        open
+        onOpenChange={() => {}}
+        presets={[]}
+        onSave={onSave}
+        onRestore={() => {}}
+        onRemove={() => {}}
+        onReset={() => {}}
+      />,
     );
     expect(screen.getByRole('dialog', {name: 'Saved layout presets'})).toBeInTheDocument();
     expect(screen.getByRole('button', {name: /reset/i})).toBeInTheDocument();
@@ -186,7 +214,12 @@ describe('AddProjectHost', () => {
     const onProjectAdded = vi.fn();
     let intent = 4;
     render(
-      <AddProjectHost open onOpenChange={() => {}} navigationIntent={() => intent} onProjectAdded={onProjectAdded} />,
+      <AddProjectHost
+        open
+        onOpenChange={() => {}}
+        navigationIntent={() => intent}
+        onProjectAdded={onProjectAdded}
+      />,
     );
     return {onProjectAdded, bump: () => void (intent += 1)};
   };

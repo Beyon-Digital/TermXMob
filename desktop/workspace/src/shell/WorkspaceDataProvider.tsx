@@ -191,7 +191,9 @@ export default function WorkspaceDataProvider({workspace, manager, children}: Pr
         }),
     ]);
     if (current()) {
-      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      const failures = results.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
       if (failures.length) {
         report(
           new Error(

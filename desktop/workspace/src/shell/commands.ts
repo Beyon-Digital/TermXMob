@@ -297,7 +297,8 @@ const specs = keyed({
     defaultKeys: 'Ctrl+`',
     terminal: true,
     // A toggle: from inside a terminal it hands focus back to the conversation.
-    run: (a, {terminalFocused}) => (terminalFocused ? a.focusPanel('conversation') : a.openSurface('terminal')),
+    run: (a, {terminalFocused}) =>
+      terminalFocused ? a.focusPanel('conversation') : a.openSurface('terminal'),
   },
   explorer: {
     title: 'Show Explorer',

@@ -36,56 +36,46 @@ export default function ManagerOverlay(props: Props) {
   const {auth, locked} = useAuth();
   const {projects, engines, providers, catalogState, configurationState, selected, load} = useWorkspaceData();
   return (
-      <div className={'manager-overlay' + (controlPage ? ' control-overlay' : '')}>
-        {controlPage ? (
-          <ControlPlane
-            key={auth.principal.id}
-            page={manager as ControlPage}
-            ownerId={auth.principal.id}
-            enabled={!locked}
-            projects={projects}
-            engines={engines}
-            providers={providers}
-            catalogState={catalogState}
-            configurationState={configurationState}
-            currentProjectId={project?.id || projectWorkbenchId}
-            onPage={onPage}
-            onManage={onManage}
-            onRefresh={() => void load()}
-            onNew={onNew}
-            onAddProject={onAddProject}
-            onOpen={onOpen}
-            onProject={onProject}
-          />
-        ) : manager === 'runners' ? (
-          <Runners
-            ownerId={auth.principal.id}
-            projectId={
-              scope === 'global' ? null : settingsProjectId || project?.id || null
-            }
-          />
-        ) : (
-          <Managers
-            section={manager}
-            projectId={
-              scope === 'global' ? null : settingsProjectId || project?.id || null
-            }
-            sessionId={scope === 'global' ? null : selected || null}
-            onSection={onSection}
-            onCapabilitiesChanged={() => void load()}
-          />
-        )}
-        {!controlPage && (
-          <Button
-            className="manager-back"
-            size="sm"
-            variant="outline"
-            onClick={onBack}
-          >
-            Back
-          </Button>
-        )}
-      </div>
-
+    <div className={'manager-overlay' + (controlPage ? ' control-overlay' : '')}>
+      {controlPage ? (
+        <ControlPlane
+          key={auth.principal.id}
+          page={manager as ControlPage}
+          ownerId={auth.principal.id}
+          enabled={!locked}
+          projects={projects}
+          engines={engines}
+          providers={providers}
+          catalogState={catalogState}
+          configurationState={configurationState}
+          currentProjectId={project?.id || projectWorkbenchId}
+          onPage={onPage}
+          onManage={onManage}
+          onRefresh={() => void load()}
+          onNew={onNew}
+          onAddProject={onAddProject}
+          onOpen={onOpen}
+          onProject={onProject}
+        />
+      ) : manager === 'runners' ? (
+        <Runners
+          ownerId={auth.principal.id}
+          projectId={scope === 'global' ? null : settingsProjectId || project?.id || null}
+        />
+      ) : (
+        <Managers
+          section={manager}
+          projectId={scope === 'global' ? null : settingsProjectId || project?.id || null}
+          sessionId={scope === 'global' ? null : selected || null}
+          onSection={onSection}
+          onCapabilitiesChanged={() => void load()}
+        />
+      )}
+      {!controlPage && (
+        <Button className="manager-back" size="sm" variant="outline" onClick={onBack}>
+          Back
+        </Button>
+      )}
+    </div>
   );
 }

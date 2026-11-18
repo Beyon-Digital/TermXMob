@@ -120,7 +120,8 @@ type Props = {selected: string; surface?: 'chat' | 'browser' | 'workbench'};
 function setup(props: Props = {selected: 'chat-1'}) {
   const onArrive = vi.fn(async () => {});
   const hook = renderHook(
-    (current: Props) => useWindowTransfer({selected: current.selected, surface: current.surface ?? 'chat', onArrive}),
+    (current: Props) =>
+      useWindowTransfer({selected: current.selected, surface: current.surface ?? 'chat', onArrive}),
     {initialProps: props},
   );
   return {...hook, onArrive};
@@ -149,7 +150,9 @@ beforeEach(() => {
       : {id: 'chat-1', cwd: '/work', draft_text: '', draft_context: []},
   );
   mocks.gql.mockImplementation(async (query: string) =>
-    query.includes('projects') ? {projects: [{id: 'proj'}]} : {sessions: [{id: 'term', cwd: '/work', exited: false}]},
+    query.includes('projects')
+      ? {projects: [{id: 'proj'}]}
+      : {sessions: [{id: 'term', cwd: '/work', exited: false}]},
   );
   mocks.recoverable.mockResolvedValue([]);
   mocks.bufferCount.mockResolvedValue(0);
@@ -193,7 +196,9 @@ describe('detach', () => {
     const {result} = setup({selected: ''});
     result.current.detachSurface('terminal' as never);
     expect(mocks.detachWorkspace).toHaveBeenCalledWith(null, 'terminal');
-    await waitFor(() => expect(mocks.report).toHaveBeenCalledWith(expect.objectContaining({message: 'No window'})));
+    await waitFor(() =>
+      expect(mocks.report).toHaveBeenCalledWith(expect.objectContaining({message: 'No window'})),
+    );
     expect(mocks.openBrowserWindow).not.toHaveBeenCalled();
   });
 });
@@ -362,7 +367,8 @@ describe('accepting a redocked window', () => {
     const first = vi.fn(async () => {});
     const second = vi.fn(async () => {});
     const {rerender} = renderHook(
-      ({onArrive}: {onArrive: () => Promise<void>}) => useWindowTransfer({selected: 'chat-1', surface: 'chat', onArrive}),
+      ({onArrive}: {onArrive: () => Promise<void>}) =>
+        useWindowTransfer({selected: 'chat-1', surface: 'chat', onArrive}),
       {initialProps: {onArrive: first}},
     );
     rerender({onArrive: second});
@@ -387,7 +393,9 @@ describe('recovery', () => {
       await result.current.recoverWindows();
     });
     expect(result.current.recoveryOpen).toBe(true);
-    expect(result.current.recoveryRows.map(row => [row.slot, row.buffers, row.drafts, row.artifacts])).toEqual([
+    expect(
+      result.current.recoveryRows.map(row => [row.slot, row.buffers, row.drafts, row.artifacts]),
+    ).toEqual([
       ['b', 0, 2, 0],
       ['c', 3, 0, 0],
     ]);
@@ -406,7 +414,12 @@ describe('recovery', () => {
     await act(async () => {
       await result.current.reopenRecovered(result.current.recoveryRows[0]);
     });
-    expect(mocks.openBrowserWindow).toHaveBeenCalledWith('owner', 'chat-2', 'workbench', result.current.recoveryRows[0]);
+    expect(mocks.openBrowserWindow).toHaveBeenCalledWith(
+      'owner',
+      'chat-2',
+      'workbench',
+      result.current.recoveryRows[0],
+    );
     expect(result.current.recoveryOpen).toBe(false);
     mocks.openBrowserWindow.mockClear();
     await act(async () => {

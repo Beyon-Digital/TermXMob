@@ -13,14 +13,30 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({count, estimateSize, getItemKey}: {count: number; estimateSize: (i: number) => number; getItemKey: (i: number) => string}) => ({
+  useVirtualizer: ({
+    count,
+    estimateSize,
+    getItemKey,
+  }: {
+    count: number;
+    estimateSize: (i: number) => number;
+    getItemKey: (i: number) => string;
+  }) => ({
     getTotalSize: () => count * 40,
     getVirtualItems: () =>
-      Array.from({length: count}, (_, index) => ({index, key: getItemKey(index), size: estimateSize(index), start: index * 40})),
+      Array.from({length: count}, (_, index) => ({
+        index,
+        key: getItemKey(index),
+        size: estimateSize(index),
+        start: index * 40,
+      })),
     measure: () => {},
   }),
 }));
-vi.mock('../lib/api', () => ({request: mocks.request, json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)})}));
+vi.mock('../lib/api', () => ({
+  request: mocks.request,
+  json: (method: string, data: unknown) => ({method, body: JSON.stringify(data)}),
+}));
 vi.mock('./AuthGate', () => ({useAuth: () => ({auth: {principal: {id: 'owner'}}})}));
 vi.mock('./errors', () => ({useReport: () => mocks.report}));
 vi.mock('./WorkspaceDataProvider', () => ({useWorkspaceData: () => mocks.data}));
@@ -47,7 +63,10 @@ function Harness(props: {
   onNewChat?: () => void;
   onMain?: () => void;
 }) {
-  sidebar = useSidebarState({primaryId: props.primaryId ?? 'main', scopeProjectId: props.scopeProjectId ?? ''});
+  sidebar = useSidebarState({
+    primaryId: props.primaryId ?? 'main',
+    scopeProjectId: props.scopeProjectId ?? '',
+  });
   return (
     <AgentSidebar
       sidebar={sidebar}
@@ -64,7 +83,11 @@ function Harness(props: {
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubGlobal('matchMedia', () => ({matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn()}));
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
   mocks.data = {
     sessions: [
       chat('main', {updated_at: 100}),
@@ -84,7 +107,9 @@ beforeEach(() => {
     sessionsState: 'ready',
     refresh: mocks.refresh,
   };
-  mocks.request.mockImplementation(async (path: string) => (path.includes('turns=false') ? chat('alpha', {revision: 7}) : {}));
+  mocks.request.mockImplementation(async (path: string) =>
+    path.includes('turns=false') ? chat('alpha', {revision: 7}) : {},
+  );
 });
 
 afterEach(() => {
@@ -97,7 +122,10 @@ describe('AgentSidebar', () => {
   it('lists conversations, pinned first, without the main agent, and marks the open one', () => {
     render(<Harness />);
     const rows = document.querySelectorAll('.session-row');
-    expect([...rows].map(row => row.querySelector('.session-row-title')?.textContent)).toEqual(['beta', 'alpha']);
+    expect([...rows].map(row => row.querySelector('.session-row-title')?.textContent)).toEqual([
+      'beta',
+      'alpha',
+    ]);
     expect(screen.getByRole('button', {name: /^alpha/})).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', {name: /^beta/})).not.toHaveAttribute('aria-current');
     expect(screen.getByText('Draft: half-written plan')).toBeInTheDocument();
@@ -145,7 +173,9 @@ describe('AgentSidebar', () => {
     mocks.request.mockRejectedValue(new Error('Conflict'));
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', {name: 'Pin alpha'}));
-    await waitFor(() => expect(mocks.report).toHaveBeenCalledWith(expect.objectContaining({message: 'Conflict'})));
+    await waitFor(() =>
+      expect(mocks.report).toHaveBeenCalledWith(expect.objectContaining({message: 'Conflict'})),
+    );
     expect(mocks.refresh).not.toHaveBeenCalled();
   });
 
@@ -156,7 +186,9 @@ describe('AgentSidebar', () => {
     const field = screen.getByRole('textbox', {name: 'Search conversations'});
     await waitFor(() => expect(field).toHaveFocus());
     fireEvent.change(field, {target: {value: 'alp'}});
-    expect([...document.querySelectorAll('.session-row-title')].map(node => node.textContent)).toEqual(['alpha']);
+    expect([...document.querySelectorAll('.session-row-title')].map(node => node.textContent)).toEqual([
+      'alpha',
+    ]);
     fireEvent.change(field, {target: {value: 'zzz'}});
     expect(screen.getByText('No matching conversations.')).toBeInTheDocument();
     fireEvent.keyDown(field, {key: 'Escape'});
@@ -218,9 +250,15 @@ describe('AgentSidebar', () => {
   });
 
   it('uses taller rows for a preview and on touch screens', () => {
-    vi.stubGlobal('matchMedia', () => ({matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn()}));
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
     render(<Harness />);
-    const heights = [...document.querySelectorAll('.session-list > div')].map(node => (node as HTMLElement).style.height);
+    const heights = [...document.querySelectorAll('.session-list > div')].map(
+      node => (node as HTMLElement).style.height,
+    );
     expect(heights).toEqual(['44px', '68px']);
   });
 });

@@ -29,7 +29,12 @@ export function CoordinationSidebar({coordination}: {coordination: Coordination}
     >
       <header className="workspace-coordination-header">
         <strong>Subagents</strong>
-        <Button variant="ghost" size="icon" aria-label="Close subagents" onClick={() => coordination.show(false)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close subagents"
+          onClick={() => coordination.show(false)}
+        >
           <X size={16} />
         </Button>
       </header>

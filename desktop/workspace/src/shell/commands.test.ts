@@ -1,6 +1,13 @@
 import {cleanup, renderHook} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {bindingWarnings, defaults, labels, validBinding, validateBindings, type Bindings} from '../lib/keybindings';
+import {
+  bindingWarnings,
+  defaults,
+  labels,
+  validBinding,
+  validateBindings,
+  type Bindings,
+} from '../lib/keybindings';
 import {settingsCategories} from '../lib/settings-categories';
 import {
   commandAvailable,
@@ -93,7 +100,8 @@ describe('command registry', () => {
     expect(defaults.terminal).toBe('Mod+7');
     expect(defaults.closeTab).toBe('Mod+W');
     expect(defaults.reopenTab).toBe('Mod+Shift+T');
-    for (const planned of ['split', 'focusGroup1', 'focusGroup2', 'focusGroup3']) expect(findCommand(planned)).toBeUndefined();
+    for (const planned of ['split', 'focusGroup1', 'focusGroup2', 'focusGroup3'])
+      expect(findCommand(planned)).toBeUndefined();
   });
 
   it('runs every command through the shell actions and nothing else', () => {
@@ -126,16 +134,33 @@ describe('command palette', () => {
     expect(entries.map(entry => entry.id)).toEqual(commands.map(command => command.id));
     expect(entries.find(entry => entry.id === 'palette')?.shortcut).toBe('Mod+Alt+P');
     expect(entries.find(entry => entry.id === 'lock')?.shortcut).toBeUndefined();
-    for (const category of settingsCategories) expect(entries.map(entry => entry.id)).toContain('manager-' + category.id);
+    for (const category of settingsCategories)
+      expect(entries.map(entry => entry.id)).toContain('manager-' + category.id);
   });
 
   it('hides workspace-panel commands outside the Agent workspace and host commands for non-admins', () => {
-    const studio = paletteEntries({workspace: 'studio', hostAdmin: false}, defaults, () => {}).map(entry => entry.id);
-    expect(studio).toEqual(commands.filter(command => commandAvailable(command, {workspace: 'studio', hostAdmin: false})).map(command => command.id));
-    for (const id of ['closeTab', 'right', 'bottom', 'focus', 'browserNew', 'voiceTalk', 'nextTab', 'stop-host']) {
+    const studio = paletteEntries({workspace: 'studio', hostAdmin: false}, defaults, () => {}).map(
+      entry => entry.id,
+    );
+    expect(studio).toEqual(
+      commands
+        .filter(command => commandAvailable(command, {workspace: 'studio', hostAdmin: false}))
+        .map(command => command.id),
+    );
+    for (const id of [
+      'closeTab',
+      'right',
+      'bottom',
+      'focus',
+      'browserNew',
+      'voiceTalk',
+      'nextTab',
+      'stop-host',
+    ]) {
       expect(studio, id).not.toContain(id);
     }
-    for (const id of ['chat', 'left', 'palette', 'lock', 'settings', 'workspace-data']) expect(studio, id).toContain(id);
+    for (const id of ['chat', 'left', 'palette', 'lock', 'settings', 'workspace-data'])
+      expect(studio, id).toContain(id);
   });
 
   it('runs the command it lists', () => {
@@ -151,7 +176,10 @@ describe('keybinding grammar and warnings', () => {
     for (const binding of ['Ctrl+`', 'Mod+,', 'Mod+\\', 'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Mod+K Mod+\\']) {
       expect(validBinding(binding), binding).toBe(true);
     }
-    expect(validateBindings({chat: 'Ctrl+`', workbench: 'Mod+,'})).toMatchObject({chat: 'Ctrl+`', workbench: 'Mod+,'});
+    expect(validateBindings({chat: 'Ctrl+`', workbench: 'Mod+,'})).toMatchObject({
+      chat: 'Ctrl+`',
+      workbench: 'Mod+,',
+    });
   });
 
   it('still rejects what it never accepted', () => {
@@ -169,23 +197,36 @@ describe('keybinding grammar and warnings', () => {
 
   it('warns about browser-reserved combinations and suggests an Alt fallback', () => {
     const warnings = bindingWarnings({...defaults, chat: 'Mod+W', workbench: 'Ctrl+Tab', browser: 'Mod+9'});
-    expect(warnings.some(warning => /^Chat: browsers may reserve Mod\+W\. Try Mod\+Alt\+W/.test(warning))).toBe(false);
-    expect(warnings).toContain('Workbench: browsers may reserve Ctrl+Tab. Try Ctrl+Alt+Tab instead, or use the Commands menu when the shortcut is unavailable.');
-    expect(warnings.some(warning => /^Browser: browsers may reserve Mod\+9\. Try Mod\+Alt\+9/.test(warning))).toBe(true);
+    expect(
+      warnings.some(warning => /^Chat: browsers may reserve Mod\+W\. Try Mod\+Alt\+W/.test(warning)),
+    ).toBe(false);
+    expect(warnings).toContain(
+      'Workbench: browsers may reserve Ctrl+Tab. Try Ctrl+Alt+Tab instead, or use the Commands menu when the shortcut is unavailable.',
+    );
+    expect(
+      warnings.some(warning => /^Browser: browsers may reserve Mod\+9\. Try Mod\+Alt\+9/.test(warning)),
+    ).toBe(true);
   });
 
   it('does not suggest a fallback that another command already has', () => {
     const warnings = bindingWarnings({...defaults, chat: 'Mod+W'});
     const chat = warnings.find(warning => warning.startsWith('Chat: browsers'));
-    expect(chat).toBe('Chat: browsers may reserve Mod+W. Use the Commands menu when the shortcut is unavailable.');
+    expect(chat).toBe(
+      'Chat: browsers may reserve Mod+W. Use the Commands menu when the shortcut is unavailable.',
+    );
   });
 
   it('warns for the number and Tab combinations the plan names', () => {
     for (const binding of ['Mod+1', 'Mod+9', 'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Mod+T', 'Mod+N']) {
       const warnings = bindingWarnings({...defaults, settings: binding});
-      expect(warnings.some(warning => warning.startsWith('Open Settings: browsers may reserve ' + binding)), binding).toBe(true);
+      expect(
+        warnings.some(warning => warning.startsWith('Open Settings: browsers may reserve ' + binding)),
+        binding,
+      ).toBe(true);
     }
-    expect(bindingWarnings({...defaults, settings: 'Mod+,'}).some(warning => warning.startsWith('Open Settings'))).toBe(false);
+    expect(
+      bindingWarnings({...defaults, settings: 'Mod+,'}).some(warning => warning.startsWith('Open Settings')),
+    ).toBe(false);
   });
 });
 
@@ -199,7 +240,12 @@ describe('shortcut dispatch and terminal focus', () => {
   function mount(options: {suspended?: boolean; escape?: () => boolean} = {}) {
     const run = vi.fn();
     renderHook(() =>
-      useShortcuts({bindings: {...defaults}, suspended: () => !!options.suspended, run, escape: options.escape}),
+      useShortcuts({
+        bindings: {...defaults},
+        suspended: () => !!options.suspended,
+        run,
+        escape: options.escape,
+      }),
     );
     const page = document.body.appendChild(document.createElement('div'));
     const terminal = document.body.appendChild(document.createElement('div'));
@@ -301,7 +347,13 @@ describe('shortcut dispatch and terminal focus', () => {
     const {run, page} = mount();
     press(page, {key: 'p', metaKey: true, shiftKey: true, repeat: true});
     press(page, {key: 'p', metaKey: true, shiftKey: true, isComposing: true});
-    const claimed = new KeyboardEvent('keydown', {key: 'p', metaKey: true, shiftKey: true, bubbles: true, cancelable: true});
+    const claimed = new KeyboardEvent('keydown', {
+      key: 'p',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
     claimed.preventDefault();
     page.dispatchEvent(claimed);
     expect(run).not.toHaveBeenCalled();

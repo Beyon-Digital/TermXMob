@@ -44,7 +44,15 @@ vi.mock('../lib/project-pins', () => ({
   orderProjectGroups: (rows: unknown) => rows,
 }));
 
-const chat = (id: string, title = id) => ({id, title, pinned: false, archived: false, revision: 1, updated_at: 0, turns: []});
+const chat = (id: string, title = id) => ({
+  id,
+  title,
+  pinned: false,
+  archived: false,
+  revision: 1,
+  updated_at: 0,
+  turns: [],
+});
 const auth = {principal: {id: 'owner', display_name: 'Owner', scopes: []}, session_id: 'auth'};
 
 let data: WorkspaceData;
@@ -71,7 +79,10 @@ function renderProvider(props: {workspace?: WorkspaceMode; manager?: string} = {
     </ErrorProvider>
   );
   const view = render(tree(props.workspace ?? 'agent', props.manager ?? ''));
-  return {...view, rerenderWith: (workspace: WorkspaceMode, manager = '') => view.rerender(tree(workspace, manager))};
+  return {
+    ...view,
+    rerenderWith: (workspace: WorkspaceMode, manager = '') => view.rerender(tree(workspace, manager)),
+  };
 }
 
 beforeEach(() => {
@@ -117,7 +128,9 @@ describe('WorkspaceDataProvider', () => {
     });
     expect(screen.getByTestId('state')).toHaveTextContent('ready/ready/ready');
     expect(data.projects.map(project => project.id)).toEqual(['proj']);
-    expect(data.engines.map(engine => [engine.id, engine.name, engine.available])).toEqual([['a', 'Alpha', true]]);
+    expect(data.engines.map(engine => [engine.id, engine.name, engine.available])).toEqual([
+      ['a', 'Alpha', true],
+    ]);
     expect(data.providers.map(provider => provider.id)).toEqual(['p1']);
     expect(data.sessions.map(row => row.id)).toEqual(['one', 'two']);
     expect(data.pinsReady).toBe(true);

@@ -145,12 +145,16 @@ export function useWindowTransfer({selected, surface, onArrive}: Options) {
       const visible = await gql<{sessions: {id: string; cwd: string; exited: boolean}[]}>(
         'query{sessions{id cwd exited}}',
       );
-      if (!visible.sessions.some(row => row.id === state.terminalId && !row.exited && row.cwd === current.cwd)) {
+      if (
+        !visible.sessions.some(row => row.id === state.terminalId && !row.exited && row.cwd === current.cwd)
+      ) {
         throw new Error('Transferred terminal is no longer available in this checkout');
       }
       rememberTerminal(state.sessionId, state.terminalId);
       window.dispatchEvent(
-        new CustomEvent('termx-terminal-handoff', {detail: {sessionId: state.sessionId, id: state.terminalId}}),
+        new CustomEvent('termx-terminal-handoff', {
+          detail: {sessionId: state.sessionId, id: state.terminalId},
+        }),
       );
     }
     await arrive.current({

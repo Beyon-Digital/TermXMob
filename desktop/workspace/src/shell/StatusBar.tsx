@@ -16,7 +16,14 @@ type Props = {
 };
 
 /** Capture controls, connection, context, Lock and Commands along the bottom of the window. */
-export default function StatusBar({online, context, contextPath, onOpenSurface, onError, onOpenPalette}: Props) {
+export default function StatusBar({
+  online,
+  context,
+  contextPath,
+  onOpenSurface,
+  onError,
+  onOpenPalette,
+}: Props) {
   const {auth, locked, beginLock} = useAuth();
   return (
     <footer className="status-bar">

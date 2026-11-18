@@ -1,4 +1,11 @@
-import {useLayoutEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction} from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from 'react';
 import {readWorkspaceMode, type WorkspaceMode} from '../lib/workspace-mode';
 import {routeManager, workspaceRoute} from './routes';
 

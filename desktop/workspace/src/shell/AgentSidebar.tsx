@@ -118,7 +118,10 @@ export function useSidebarState(options: {primaryId: string; scopeProjectId: str
   async function updateRow(chat: Session, changes: Record<string, unknown>) {
     try {
       const latest = await request<Session>('/api/workspace/sessions/' + chat.id + '?turns=false');
-      await request('/api/workspace/sessions/' + chat.id, json('PATCH', {revision: latest.revision, changes}));
+      await request(
+        '/api/workspace/sessions/' + chat.id,
+        json('PATCH', {revision: latest.revision, changes}),
+      );
       await refresh();
     } catch (reason) {
       report(reason);
@@ -164,8 +167,18 @@ type Props = {
 /** Chats and agents: New chat, the main agent, filters, search and the virtualized conversation list. */
 export default function AgentSidebar(props: Props) {
   const {sidebar, primaryId, manager, creating} = props;
-  const {session, selected, setProjectId, projectPins, pinsReady, pinBusy, pinProject, archived, setArchived, sessionsState} =
-    useWorkspaceData();
+  const {
+    session,
+    selected,
+    setProjectId,
+    projectPins,
+    pinsReady,
+    pinBusy,
+    pinProject,
+    archived,
+    setArchived,
+    sessionsState,
+  } = useWorkspaceData();
   const {query, rows, previews, virtual} = sidebar;
   const primaryCurrent = !manager && selected === primaryId;
   const statusOf = (chat: Session) => (chat.id === session?.id ? session.latest_status : chat.latest_status);
@@ -257,7 +270,12 @@ export default function AgentSidebar(props: Props) {
             return (
               <div
                 key={row.key}
-                style={{position: 'absolute', height: item.size, transform: `translateY(${item.start}px)`, width: '100%'}}
+                style={{
+                  position: 'absolute',
+                  height: item.size,
+                  transform: `translateY(${item.start}px)`,
+                  width: '100%',
+                }}
               >
                 {row.kind === 'project' ? (
                   <ProjectGroup

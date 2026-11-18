@@ -54,7 +54,10 @@ vi.mock('../components/LockScreen', () => ({
   ),
 }));
 
-const auth = {principal: {id: 'owner', display_name: 'Owner', scopes: ['host-admin']}, session_id: 'session-1'};
+const auth = {
+  principal: {id: 'owner', display_name: 'Owner', scopes: ['host-admin']},
+  session_id: 'session-1',
+};
 
 type Probe = ReturnType<typeof useAuth>;
 let probe: Probe | undefined;

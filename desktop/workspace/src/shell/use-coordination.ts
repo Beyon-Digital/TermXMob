@@ -47,7 +47,8 @@ export function useCoordination(options: {workspace: WorkspaceMode; manager: str
     }
     if (!retained) return;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const duration = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--motion-exit')) || 120;
+    const duration =
+      parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--motion-exit')) || 120;
     const timer = setTimeout(() => setRetained(false), reduce ? 0 : duration);
     return () => clearTimeout(timer);
   }, [visible, retained]);

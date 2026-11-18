@@ -23,31 +23,30 @@ export default function WorkflowsHost(props: Props) {
   const {auth, locked} = useAuth();
   const {projects, session, selected} = useWorkspaceData();
   return (
-      <div
-        className="workspace-workflows-host manager-overlay control-overlay"
-        hidden={workspace !== 'agent' || manager !== 'workflows'}
-        inert={workspace !== 'agent' || manager !== 'workflows' || locked}
-      >
-        <Workflows
-          key={auth.principal.id}
-          ownerId={auth.principal.id}
-          projectId={project?.id || projectWorkbenchId || null}
-          projects={projects}
-          sessionId={
-            session?.id === selected &&
-            session.mode === 'agent' &&
-            !session.runner_id &&
-            session.workflow !== 'browser'
-              ? session.id
-              : null
-          }
-          runId={runId}
-          visible={workspace === 'agent' && manager === 'workflows'}
-          locked={locked}
-          onOpenSession={onOpenSession}
-          onNavigate={onNavigate}
-        />
-      </div>
-
+    <div
+      className="workspace-workflows-host manager-overlay control-overlay"
+      hidden={workspace !== 'agent' || manager !== 'workflows'}
+      inert={workspace !== 'agent' || manager !== 'workflows' || locked}
+    >
+      <Workflows
+        key={auth.principal.id}
+        ownerId={auth.principal.id}
+        projectId={project?.id || projectWorkbenchId || null}
+        projects={projects}
+        sessionId={
+          session?.id === selected &&
+          session.mode === 'agent' &&
+          !session.runner_id &&
+          session.workflow !== 'browser'
+            ? session.id
+            : null
+        }
+        runId={runId}
+        visible={workspace === 'agent' && manager === 'workflows'}
+        locked={locked}
+        onOpenSession={onOpenSession}
+        onNavigate={onNavigate}
+      />
+    </div>
   );
 }

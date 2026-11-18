@@ -18,7 +18,11 @@ afterEach(() => {
 describe('workspaceRoute', () => {
   it('reads a conversation from the path, then from the detached-window query', () => {
     expect(workspaceRoute('/session/abc%20def', '')).toEqual({selected: 'abc def', manager: '', project: ''});
-    expect(workspaceRoute('/', '?session=s1&project=p1')).toEqual({selected: 's1', manager: '', project: 'p1'});
+    expect(workspaceRoute('/', '?session=s1&project=p1')).toEqual({
+      selected: 's1',
+      manager: '',
+      project: 'p1',
+    });
     expect(workspaceRoute('/session/path', '?session=query').selected).toBe('path');
   });
 

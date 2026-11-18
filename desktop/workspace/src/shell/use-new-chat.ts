@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from 'react';
+import {useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction} from 'react';
 import {leaveSettings} from '../features/settings-forms';
 import type {AgentPreset} from '../features/PresetPicker';
 import {gql, json, request, type Project, type Session} from '../lib/api';
@@ -176,7 +169,13 @@ export function useNewChat(options: Options) {
   // Focus the new conversation's composer once it is on screen, unless the person went elsewhere meanwhile.
   useEffect(() => {
     const pending = newComposerFocus.current;
-    if (!pending || selected !== pending.id || session?.id !== pending.id || workspace !== 'agent' || newOpen) {
+    if (
+      !pending ||
+      selected !== pending.id ||
+      session?.id !== pending.id ||
+      workspace !== 'agent' ||
+      newOpen
+    ) {
       return;
     }
     const focus = () => {

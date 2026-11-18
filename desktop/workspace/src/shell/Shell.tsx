@@ -7,138 +7,48 @@ import {
   useWorkspaceThemeScope,
   workspaceRoute,
 } from './routes';
-import AuthGate, {useAuth} from './AuthGate';
+import {useAuth} from './AuthGate';
 import {useShellNavigation, type ShellNavigation} from './navigation-state';
 import WorkspaceDataProvider, {useWorkspaceData} from './WorkspaceDataProvider';
-import {ErrorProvider, useErrorMessage, useReport} from './errors';
+import {useErrorMessage, useReport} from './errors';
 import {useStudioProjects} from '../lib/studio-projects';
 import {useStudioProjectGuard} from '../lib/studio-draft-state';
 import StudioProjectSwitchDialog from '../features/StudioProjectSwitchDialog';
-import SettingsSurface from '../features/SettingsSurface';
 import {useBotsNeedYouCount} from '../features/bot-attention';
 import {needsYouCount} from '../lib/bot-schedules';
 import {leaveSettings, SETTINGS_LEAVE} from '../features/settings-forms';
-import SettingsGeneral from '../features/SettingsGeneral';
-import {isSettingsCategory, canonicalSettingsCategory, settingsCategories} from '../lib/settings-categories';
+import {isSettingsCategory} from '../lib/settings-categories';
 import {useObservationActive} from '../lib/use-observation-active';
-import PairSignIn from '../components/PairSignIn';
-import ControlPlane, {type ControlPage} from '../features/ControlPlane';
 
-import {taskState} from '../lib/task-presentation';
-import {sessionFence} from '../lib/session-fence';
-import {preserveBeforeLock} from '../lib/lock-preservation';
-import LockScreen from '../components/LockScreen';
-import HostStop from '../components/HostStop';
-import {
-  restoreArtifactDrafts,
-  persistArtifactDrafts,
-  snapshotArtifactDrafts,
-  receiveArtifactDrafts,
-  freezeArtifactDrafts,
-  unfreezeArtifactDrafts,
-  dropArtifactDrafts,
-} from '../lib/artifact-drafts';
-import LayoutPresets from '../components/LayoutPresets';
 import {LayoutPresetStore, defaultLayout, layoutSnapshot, type NamedLayout} from '../lib/layout-presets';
 import {useTheme} from '../lib/theme';
-import WorkspaceCommands from '../components/WorkspaceCommands';
 import WorkspaceNavigation from '../components/WorkspaceNavigation';
 import WorkspaceModeSwitch from '../components/WorkspaceModeSwitch';
 import StudioNavigation from '../components/StudioNavigation';
 import {
   readWorkspaceMode,
   readStudioSection,
-  workspaceHistoryTarget,
   type WorkspaceMode,
   type StudioSection,
 } from '../lib/workspace-mode';
-import OrchestratorStatus, {type CoordinationSidebarSummary} from '../features/OrchestratorStatus';
+import OrchestratorStatus from '../features/OrchestratorStatus';
 import {latestExecutionTask} from '../lib/conversation-messages';
-import WorkspaceMenu from '../components/WorkspaceMenu';
 import {readSidebarPreference, saveSidebarPreference} from '../lib/sidebar-preferences';
 import '../workspace-shell.css';
 import '../agent-theme.css';
 import {useSessionChanges} from '../lib/session-changes';
 import {workspaceFullscreen} from '../lib/workspace-fullscreen';
 import {workspaceFilePath} from '../lib/workspace-files';
-import {
-  persistWindowRecord,
-  persistWindowDraft,
-  restoreWindowDrafts,
-  recoverableWindows,
-  bufferCount,
-  detachedBrowser,
-  type WindowRecord,
-  type WindowPanel,
-} from '../lib/window-journal';
-import {
-  openBrowserWindow,
-  listenBrowserRedock,
-  requestBrowserRedock,
-  cancelBrowserRedock,
-  commitBrowserRedock,
-} from '../lib/browser-windows';
-import {snapshotWindow, flushRedockDraft, acceptTransferredDraft} from '../lib/redock-state';
-import {
-  validateWindowState,
-  receiveBuffers,
-  rememberTerminal,
-  freezeWindowBuffers,
-  unfreezeWindowBuffers,
-  dropWindowBuffers,
-  persistBuffers,
-  snapshotBuffers,
-} from '../lib/window-state';
-import {sessionDrafts} from '../lib/drafts';
 import {contextItem, type IncomingContext} from '../lib/context';
-import {lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
-import {usePolling} from '../lib/use-polling';
+import {lazy, Suspense, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {useLayout, type Layout} from '../lib/use-layout';
-import {useAuthSession, type Auth, type Methods} from '../lib/use-auth';
-import {useSessionSnapshot} from '../lib/use-session-snapshot';
-import {useVirtualizer} from '@tanstack/react-virtual';
-import {
-  Clapperboard,
-  Maximize2,
-  Minimize2,
-  TerminalSquare,
-  GitCompareArrows,
-  Code2,
-  Home,
-  SlidersHorizontal,
-  PanelRight,
-  PanelBottom,
-  Monitor,
-  MessageSquare,
-  Globe,
-  Sun,
-  Moon,
-  Plus,
-  Pin,
-  Archive,
-  Search,
-  Settings,
-  ExternalLink,
-  ChevronRight,
-  ChevronDown,
-  Folder,
-  Command,
-  Shield,
-  Cloud,
-  Clock,
-  GripVertical,
-  Boxes,
-  LayoutDashboard,
-  Lock,
-  X,
-} from 'lucide-react';
+import {Pin, Settings, Folder} from 'lucide-react';
 import {Button} from '../components/ui/button';
 import DockWorkspace from '../components/DockWorkspace';
 import {loadBindings, defaults, type Bindings} from '../lib/keybindings';
 import {
   commandAvailable,
   findCommand,
-  paletteEntries,
   type BrowserCommand,
   type Command as RegisteredCommand,
   type CommandActions,
@@ -148,6 +58,7 @@ import {
 import {useShortcuts} from './use-shortcuts';
 import AgentSidebar, {useSidebarState} from './AgentSidebar';
 import {CoordinationSidebar, InspectedTaskSupervisor} from './CoordinationSidebar';
+import DataHost from './DataHost';
 import ManagerOverlay from './ManagerOverlay';
 import SettingsHost from './SettingsHost';
 import WorkflowsHost from './WorkflowsHost';
@@ -155,6 +66,7 @@ import WorkspaceHeader from './WorkspaceHeader';
 import {managerTitle} from './manager-titles';
 import {useCoordination} from './use-coordination';
 import StatusBar from './StatusBar';
+import StudioHost from './StudioHost';
 import AddProjectHost from './dialogs/AddProjectHost';
 import CommandPaletteDialog from './dialogs/CommandPaletteDialog';
 import LayoutsDialog from './dialogs/LayoutsDialog';
@@ -164,8 +76,6 @@ import {useNewChat} from './use-new-chat';
 import {RedockCover, useWindowTransfer} from './WindowTransfer';
 import {
   layouts,
-  validateDockMap,
-  defaultGeometry,
   focusDockMap,
   panelSurface,
   workspaceSurface,
@@ -174,66 +84,17 @@ import {
   type DockGeometry,
   type DockPanel,
 } from '../lib/docking';
-import PresetPicker, {type AgentPreset} from '../features/PresetPicker';
-import ProjectGroup from '../features/ProjectGroup';
-import {loadProjectPins, changeProjectPin, orderProjectGroups, type ProjectPins} from '../lib/project-pins';
 import '../features/session-controls.css';
-import {Input} from '../components/ui/input';
-import {Select} from '../components/ui/select';
-import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../components/ui/dialog';
-import AddProjectDialog from '../components/AddProjectDialog';
-import {HostPathField} from '../components/HostPathPicker';
-import {formatShortcut} from '../lib/shortcut-label';
 import {folderName} from '../lib/path-label';
-import {listSessions, SessionCache} from '../lib/workspace-data';
-import {checkCompatibility} from '../lib/compatibility';
-import {
-  nativeWorkspace,
-  nativeLogin,
-  detachWorkspace,
-  isDetachedWindow,
-  listenNativeRedock,
-  listenNativeLocks,
-  requestRedock,
-  acceptRedock,
-  rejectRedock,
-  commitRedock,
-  cancelRedock,
-} from '../lib/native';
-import {scopeProjects} from '../lib/project-labels';
-import {
-  gql,
-  json,
-  request,
-  signOut,
-  login,
-  lockWorkspace,
-  lockState,
-  ApiError,
-  type LockState,
-  type Engine,
-  type Project,
-  type Provider,
-  type Session,
-  type Task,
-} from '../lib/api';
-const Characters = lazy(() => import('../features/Characters'));
+import {json, request, type Project, type Session} from '../lib/api';
 const CompanionHabitat = lazy(() => import('../features/CompanionHabitat'));
-const CaptureStatus = lazy(() => import('../features/CaptureStatus'));
 const Chat = lazy(() => import('../features/Chat'));
-const SidebarTaskSupervisor = lazy(() => import('../features/TaskSupervisor'));
 const Workbench = lazy(() => import('../features/Workbench'));
 const ChangeReview = lazy(() => import('../features/ChangeReview'));
 const TerminalPanel = lazy(() => import('../features/TerminalPanel'));
 const BrowserSurface = lazy(() => import('../features/BrowserSurface'));
-const SafetyManager = lazy(() => import('../features/SafetyManager'));
-const Runners = lazy(() => import('../features/Runners'));
-const MediaWorkspace = lazy(() => import('../features/MediaWorkspace'));
-const DataStudio = lazy(() => import('../features/data/DataStudio'));
 const Artifacts = lazy(() => import('../features/Media'));
 const ComputerSurface = lazy(() => import('../features/ComputerSurface'));
-const Managers = lazy(() => import('../features/Managers'));
-const Workflows = lazy(() => import('../features/Workflows'));
 type LayoutSnapshot = {
   layout: Layout;
   dock: DockMap;
@@ -266,7 +127,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     providers,
     sessionsState,
     catalogState,
-    configurationState,
     selected,
     setSelected,
     selection,
@@ -275,15 +135,9 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     session,
     setSession,
     sessionCache,
-    archived,
-    setArchived,
     workspaceActive,
     load,
     refresh,
-    projectPins,
-    pinsReady,
-    pinBusy,
-    pinProject,
   } = useWorkspaceData();
   const [theme, setTheme] = useTheme(),
     [addProjectOpen, setAddProjectOpen] = useState(false),
@@ -585,8 +439,9 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     quickCommand = useRef(false);
   const [quickNonce, setQuickNonce] = useState(0);
   const project =
-    projects.find(project => project.id === (session ? session.project_id : projectWorkbenchId || projectId)) ||
-    null;
+    projects.find(
+      project => project.id === (session ? session.project_id : projectWorkbenchId || projectId),
+    ) || null;
   const sidebar = useSidebarState({primaryId, scopeProjectId: project?.id || projectWorkbenchId});
   const studioProject =
     studioProjects.projects.find(row => row.id === studioProjectId) ||
@@ -918,7 +773,10 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     setRight(false);
     setBottom(false);
   }
-  const commandContext: CommandContext = {workspace, hostAdmin: !!auth?.principal.scopes.includes('host-admin')};
+  const commandContext: CommandContext = {
+    workspace,
+    hostAdmin: !!auth?.principal.scopes.includes('host-admin'),
+  };
   const commandActions: CommandActions = {
     setManager,
     setWorkspace: value => setWorkspace(value),
@@ -947,7 +805,8 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
         chooseLayout('browser');
       } else window.dispatchEvent(new CustomEvent('termx-browser-command', {detail: {command}}));
     },
-    panelCommand: command => window.dispatchEvent(new CustomEvent('termx-panel-command', {detail: {command}})),
+    panelCommand: command =>
+      window.dispatchEvent(new CustomEvent('termx-panel-command', {detail: {command}})),
     toggleFullscreen: () => void toggleFullscreen(),
     openSavedLayouts: () => setLayoutsOpen(true),
     toggleSidebar: () => {
@@ -1462,58 +1321,31 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
                     onNavigate={setManager}
                   />
                 )}
-                <div
-                  id="studio-workspace"
-                  className="workspace-studio-host"
-                  role="region"
-                  aria-label="Studio workspace"
-                  hidden={workspace !== 'studio'}
-                  inert={workspace !== 'studio' || !!manager}
-                  aria-hidden={workspace !== 'studio' || !!manager ? true : undefined}
-                >
-                  {studioVisited && (
-                    <MediaWorkspace
-                      section={studioSection}
-                      onSectionChange={setStudioSection}
-                      presentation="standalone"
-                      key={auth.principal.id}
-                      ownerId={auth.principal.id}
-                      projectId={studioProjectId || null}
-                      projectName={studioProject?.name}
-                      readOnly={studioProjectReadOnly}
-                      onProjectActivity={studioProjectGuard.receive}
-                      visible={studioVisible}
-                      observing={studioActive}
-                      locked={locked}
-                      onConfigureProvider={() => openStudioSection('settings')}
-                      onProvidersChanged={() => void load()}
-                      onContext={attachStudioContext}
-                    />
-                  )}
-                </div>
-                <div
-                  id="data-workspace"
-                  className="workspace-data-host"
-                  role="region"
-                  aria-label="Data workspace"
-                  hidden={workspace !== 'data'}
-                  inert={workspace !== 'data' || !!manager || locked}
-                  aria-hidden={workspace !== 'data' || !!manager || locked ? true : undefined}
-                >
-                  {dataVisited && (
-                    <DataStudio
-                      key={auth.principal.id}
-                      ownerId={auth.principal.id}
-                      visible={dataVisible}
-                      observing={dataVisible}
-                      locked={locked}
-                      navigationHost={dataSidebarHost}
-                      onNavigate={() => {
-                        if (matchMedia('(max-width:850px)').matches) setDataSidebarOpen(false);
-                      }}
-                    />
-                  )}
-                </div>
+                <StudioHost
+                  workspace={workspace}
+                  manager={manager}
+                  visited={studioVisited}
+                  section={studioSection}
+                  onSectionChange={setStudioSection}
+                  projectId={studioProjectId}
+                  project={studioProject}
+                  readOnly={studioProjectReadOnly}
+                  onProjectActivity={studioProjectGuard.receive}
+                  visible={studioVisible}
+                  observing={studioActive}
+                  onConfigureProvider={() => openStudioSection('settings')}
+                  onContext={attachStudioContext}
+                />
+                <DataHost
+                  workspace={workspace}
+                  manager={manager}
+                  visited={dataVisited}
+                  visible={dataVisible}
+                  navigationHost={dataSidebarHost}
+                  onNavigate={() => {
+                    if (matchMedia('(max-width:850px)').matches) setDataSidebarOpen(false);
+                  }}
+                />
                 <div
                   id="agent-workspace"
                   className="workspace-dock-host"

@@ -13,7 +13,15 @@ type Props = {
 };
 
 /** Saved layout presets: save the current arrangement, restore, remove, or reset to the default. */
-export default function LayoutsDialog({open, onOpenChange, presets, onSave, onRestore, onRemove, onReset}: Props) {
+export default function LayoutsDialog({
+  open,
+  onOpenChange,
+  presets,
+  onSave,
+  onRestore,
+  onRemove,
+  onReset,
+}: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>

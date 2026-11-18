@@ -49,7 +49,11 @@ export default function NewChatDialog(props: Props) {
         <form onSubmit={submit}>
           <label>
             Project
-            <Select aria-label="Project" value={props.projectId} onChange={event => props.onProject(event.target.value)}>
+            <Select
+              aria-label="Project"
+              value={props.projectId}
+              onChange={event => props.onProject(event.target.value)}
+            >
               <option value="">Unassigned conversation</option>
               {scopeProjects(props.projects, props.projectId).map(project => (
                 <option value={project.id} key={project.id}>

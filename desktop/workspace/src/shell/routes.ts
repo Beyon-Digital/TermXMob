@@ -33,7 +33,15 @@ export function workspaceRoute(pathname = location.pathname, search = location.s
 }
 
 /** Panel arrangements a detached window may ask for with `?layout=`. `focus` is never restored from a URL. */
-export const ROUTE_LAYOUTS = ['chat', 'workbench', 'browser', 'computer', 'artifacts', 'review', 'terminal'] as const;
+export const ROUTE_LAYOUTS = [
+  'chat',
+  'workbench',
+  'browser',
+  'computer',
+  'artifacts',
+  'review',
+  'terminal',
+] as const;
 export type RouteLayout = (typeof ROUTE_LAYOUTS)[number];
 
 export function routeLayout(search = location.search): RouteLayout | null {
@@ -78,7 +86,14 @@ export function useWorkspaceHistory(
     // Native IPC and media grants are bound to the exact root workspace URL.
     // Its windows use query parameters for initial selection, not browser routes.
     if (!authenticated || nativeWorkspace()) return;
-    const target = workspaceHistoryTarget(manager, selected, workspace, location.search, studioSection, project);
+    const target = workspaceHistoryTarget(
+      manager,
+      selected,
+      workspace,
+      location.search,
+      studioSection,
+      project,
+    );
     if (location.pathname + location.search === target) return;
     // `/` only exists to land on a conversation; keeping it as its own entry makes Back bounce forward again.
     if (location.pathname === '/' && !location.search && target.startsWith('/session/')) {
@@ -117,12 +132,21 @@ export function useWorkspacePopstate(options: PopstateOptions) {
       const mode = readWorkspaceMode();
       // The studio section is read when the navigation is applied, as it always was, not when it was requested.
       const proceed = () => latest.current.onRoute({route, mode, studioSection: readStudioSection()});
-      const allowed = window.dispatchEvent(new CustomEvent(SETTINGS_LEAVE, {cancelable: true, detail: {proceed}}));
+      const allowed = window.dispatchEvent(
+        new CustomEvent(SETTINGS_LEAVE, {cancelable: true, detail: {proceed}}),
+      );
       if (!allowed) {
         history.pushState(
           null,
           '',
-          workspaceHistoryTarget(manager, selected, workspace, location.search, studioSection, projectWorkbenchId),
+          workspaceHistoryTarget(
+            manager,
+            selected,
+            workspace,
+            location.search,
+            studioSection,
+            projectWorkbenchId,
+          ),
         );
         return;
       }

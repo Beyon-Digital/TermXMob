@@ -75,7 +75,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const created = () => JSON.parse(mocks.request.mock.calls.find(([path]) => path === '/api/workspace/sessions')![1].body);
+const created = () =>
+  JSON.parse(mocks.request.mock.calls.find(([path]) => path === '/api/workspace/sessions')![1].body);
 
 describe('one-click new chat', () => {
   it('creates an agent conversation with the first configured provider and shows it', async () => {
@@ -98,7 +99,10 @@ describe('one-click new chat', () => {
     expect(mocks.setProjectId).toHaveBeenCalledWith('');
     expect(options.setManager).toHaveBeenCalledWith('');
     expect(options.chooseLayout).toHaveBeenCalledWith('chat');
-    expect(result.current.newComposerFocus.current).toEqual({id: 'new-chat', intent: navigationIntent.current});
+    expect(result.current.newComposerFocus.current).toEqual({
+      id: 'new-chat',
+      intent: navigationIntent.current,
+    });
     expect(result.current.registering).toBe(false);
   });
 
@@ -190,7 +194,11 @@ describe('new chat with options', () => {
   it('opens a clean dialog for a project and loads that project’s presets', async () => {
     mocks.request.mockImplementation(async (path: string) =>
       path.startsWith('/api/workspace/presets')
-        ? {presets: [{id: 'preset', name: 'Reviewer', engine: 'inherit', model: 'm1', workspace_revision: 'r'}]}
+        ? {
+            presets: [
+              {id: 'preset', name: 'Reviewer', engine: 'inherit', model: 'm1', workspace_revision: 'r'},
+            ],
+          }
         : chat('from-preset', 'p1'),
     );
     const {result, navigationIntent} = setup();
@@ -207,7 +215,18 @@ describe('new chat with options', () => {
     mocks.data.projectId = 'p 1';
     mocks.request.mockImplementation(async (path: string) =>
       path.startsWith('/api/workspace/presets')
-        ? {presets: [{id: 'preset', name: 'Reviewer', engine: 'inherit', model: 'm1', provider_id: 'pp', workspace_revision: 'r'}]}
+        ? {
+            presets: [
+              {
+                id: 'preset',
+                name: 'Reviewer',
+                engine: 'inherit',
+                model: 'm1',
+                provider_id: 'pp',
+                workspace_revision: 'r',
+              },
+            ],
+          }
         : chat('from-preset'),
     );
     const {result} = setup();
@@ -219,13 +238,20 @@ describe('new chat with options', () => {
     await act(async () => {
       await result.current.createConversation();
     });
-    expect(created()).toMatchObject({engine: 'internal', provider_id: 'pp', model: 'm1', custom_agent_id: 'preset'});
+    expect(created()).toMatchObject({
+      engine: 'internal',
+      provider_id: 'pp',
+      model: 'm1',
+      custom_agent_id: 'preset',
+    });
     expect(result.current.newOpen).toBe(false);
     expect(result.current.newPreset).toBe('');
   });
 
   it('registers a typed project folder first and creates the chat inside it', async () => {
-    mocks.gql.mockResolvedValue({register_project: {id: 'folder-project', name: 'folder', path: '/work/folder'}});
+    mocks.gql.mockResolvedValue({
+      register_project: {id: 'folder-project', name: 'folder', path: '/work/folder'},
+    });
     const {result} = setup();
     act(() => result.current.setFolder('/work/folder'));
     await act(async () => {
