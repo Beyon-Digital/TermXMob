@@ -178,6 +178,9 @@ class Session:
     cwd: str = field(default_factory=lambda: str(Path.home()))
     shell: str = field(default_factory=default_shell)
     sandbox_profile: str = "host"
+    # Complete child environment for the host profile (callers scrub it); None
+    # inherits the daemon's. Restricted profiles always build their own.
+    env: dict[str, str] | None = None
     master_fd: int = -1
     proc: object | None = None
     replay: ReplayBuffer = field(default_factory=ReplayBuffer)
@@ -210,7 +213,7 @@ class Session:
         elif self.sandbox_profile != "host":
             argv, env = self._restricted_launch()
         else:
-            env = os.environ.copy()
+            env = dict(self.env) if self.env is not None else os.environ.copy()
             env.setdefault("TERM", "xterm-256color")
             env.setdefault("COLORTERM", "truecolor")
             argv = with_shell_integration(self.argv, env)
@@ -478,6 +481,18 @@ class Session:
         if reader is not None and reader.is_alive():
             reader.join(timeout=0.5)
 
+    def output_tail(self, max_bytes: int = 8192) -> bytes:
+        """The last ``max_bytes`` of replayed output (a status/read window, not a transcript)."""
+        with self._lock:
+            data = self.replay.dump()
+        return data[-max_bytes:] if max_bytes > 0 else b""
+
+    def quiet_seconds(self) -> float | None:
+        """Seconds since the last output chunk, or None when nothing was ever written."""
+        if not self._last_output_at:
+            return None
+        return max(0.0, _time.monotonic() - self._last_output_at)
+
     def snapshot(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -508,6 +523,7 @@ class SessionManager:
         cwd: str | None = None,
         shell: str | None = None,
         sandbox_profile: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> Session:
         self._seq += 1
         sid = uuid.uuid4().hex[:12]
@@ -524,6 +540,7 @@ class SessionManager:
             cwd=cwd or str(Path.home()),
             shell=sh,
             sandbox_profile=sandbox_profile or "host",
+            env=env,
         )
         session.start()
         try:
