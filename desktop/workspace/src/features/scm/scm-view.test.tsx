@@ -113,6 +113,14 @@ describe('ScmView groups', () => {
     expect(screen.getByText('Choose a conversation to review its changes.')).toBeInTheDocument();
   });
 
+  it('offers Add project as its one action when there is no project', async () => {
+    const user = userEvent.setup();
+    const onAddProject = vi.fn();
+    view(deliveryHost(), {project: null, session: null, onAddProject, source: source([], {available: false, unavailableReason: 'Choose a project conversation to review changes.', data: null})});
+    await user.click(screen.getByRole('button', {name: 'Add project'}));
+    expect(onAddProject).toHaveBeenCalledTimes(1);
+  });
+
   it('names a folder that is not a repository, and offers to retry a failed read', async () => {
     const user = userEvent.setup();
     const {unmount} = view(deliveryHost(), {source: source([], {data: {repo: false, branch: null, head: null, files: [], additions: 0, deletions: 0, counts_complete: true, truncated: false}})});

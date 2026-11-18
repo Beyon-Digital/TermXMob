@@ -12,13 +12,15 @@ type Props = {
   /** Open a result: the file in a tab, at the line when the host gave one. */
   onOpenFile: (path: string, line?: number) => void;
   onError: (reason: unknown) => void;
+  /** Offered when there is no project to search: the empty state's one action. */
+  onAddProject?: () => void;
 };
 
 /**
  * Workspace text search in the side bar. It asks the host the same question the old editor's search tab asked
  * (`features/editor/file-io.ts`), and a result opens its file as a tab at that line.
  */
-export default function SearchView({project, session, onOpenFile, onError}: Props) {
+export default function SearchView({project, session, onOpenFile, onError, onAddProject}: Props) {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +48,14 @@ export default function SearchView({project, session, onOpenFile, onError}: Prop
     }
   }
 
-  if (!project) return <p className="explorer-note">Open a project to search its files.</p>;
+  if (!project) {
+    return (
+      <div className="explorer-empty">
+        <p>Open a project to search its files.</p>
+        {onAddProject && <Button onClick={onAddProject}>Add project</Button>}
+      </div>
+    );
+  }
   return (
     <div className="search-view">
       <form

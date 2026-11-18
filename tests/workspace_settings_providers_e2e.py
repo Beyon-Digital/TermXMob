@@ -124,13 +124,13 @@ def run(destination: str, evidence: str | None = None) -> None:
                     settle()
 
                 def layout(label: str) -> None:
-                    """No page overflow, the dialog inside the viewport, and no axe violation at desktop and phone width."""
+                    """No page overflow, the Settings page inside the viewport, and no axe violation at desktop and phone width."""
                     for width, height in ((1280, 900), (390, 844)):
                         page.set_viewport_size({"width": width, "height": height})
                         settle()
                         overflow = page.evaluate("document.documentElement.scrollWidth > innerWidth + 1")
                         inner = page.evaluate(
-                            "()=>{const d=document.querySelector('.settings-surface');if(!d)return 0;"
+                            "()=>{const d=document.querySelector('.settings-surface-page');if(!d)return 0;"
                             "return [...d.querySelectorAll('.settings-content *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).position!=='fixed').length}"
                         )
                         bounds = dialog.bounding_box()
@@ -138,7 +138,7 @@ def run(destination: str, evidence: str | None = None) -> None:
                         assert bounds and bounds["x"] >= -1 and bounds["x"] + bounds["width"] <= width + 1, f"{label} dialog leaves the viewport at {width}px"
                         assert inner == 0, f"{label}: {inner} elements extend past the viewport at {width}px"
                         violations = page.evaluate(
-                            "async()=>{const r=await axe.run(document.querySelector('.settings-surface'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});"
+                            "async()=>{const r=await axe.run(document.querySelector('.settings-surface-page'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});"
                             "return r.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))}"
                         )
                         report["layout"].append({"state": label, "width": width, "overflow": False})
@@ -151,10 +151,18 @@ def run(destination: str, evidence: str | None = None) -> None:
                 page.get_by_label("Username", exact=True).fill("providers-fixture")
                 page.get_by_label("Password", exact=True).fill("providers-fixture-password-123")
                 page.get_by_role("button", name="Continue with password").click()
-                page.get_by_role("button", name="Settings", exact=True).wait_for(timeout=20000)
-                page.get_by_role("button", name="Settings", exact=True).click()
-                dialog = page.get_by_role("dialog", name="Settings", exact=True)
-                dialog.wait_for()
+                # The IDE layout is the default: Settings is a tab, opened from the activity bar.
+                page.get_by_role("tablist", name="Editor group 1 tabs").wait_for(timeout=60000)
+                dialog = page.get_by_role("region", name="Settings", exact=True)
+                for attempt in range(4):
+                    # A click that lands while the shell is still restoring its layout can be lost: ask again.
+                    page.get_by_role("toolbar", name="Activity bar").get_by_role("button", name="Settings", exact=True).click()
+                    try:
+                        dialog.wait_for(timeout=8000)
+                        break
+                    except Exception:
+                        if attempt == 3:
+                            raise
                 page.add_script_tag(path=str(axe_path))
                 nav = dialog.get_by_role("navigation", name="Settings categories")
                 mobile_category = dialog.get_by_role("combobox", name="Settings category", exact=True)

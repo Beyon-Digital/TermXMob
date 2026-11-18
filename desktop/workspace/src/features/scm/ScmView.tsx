@@ -1,4 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
+import {Button} from '../../components/ui/button';
 import type {Project, Session} from '../../lib/api';
 import type {SessionChangesSource} from '../../lib/session-changes';
 import BranchesSection from './BranchesSection';
@@ -25,6 +26,8 @@ type Props = {
   onOpenFile: (path: string) => void;
   /** The conversation's checkout changed: reload what depends on it. */
   onCheckoutChanged: () => void | Promise<void>;
+  /** Offered when there is no project: the empty state's one action. */
+  onAddProject?: () => void;
 };
 
 /**
@@ -32,7 +35,7 @@ type Props = {
  * button is the view's one primary button; it becomes Push when the checkout is clean and ahead of its upstream. Pull requests,
  * branches and worktrees stay collapsed below.
  */
-export default function ScmView({project, session, source, onOpenDiff, onOpenFile, onCheckoutChanged}: Props) {
+export default function ScmView({project, session, source, onOpenDiff, onOpenFile, onCheckoutChanged, onAddProject}: Props) {
   const scm = useScm({project, session, source, onCheckoutChanged});
   const scope = (project?.id ?? '') + '|' + (session?.worktree_id ?? '');
   const [message, setMessage] = useState(() => readDraft(scope));
@@ -92,7 +95,14 @@ export default function ScmView({project, session, source, onOpenDiff, onOpenFil
     return () => window.removeEventListener(SCM_COMMAND_EVENT, take);
   }, []);
 
-  if (!source.available) return <p className="view-empty view-empty-padded">{source.unavailableReason}</p>;
+  if (!source.available) {
+    return (
+      <div className="view-empty-padded scm-empty">
+        <p className="view-empty">{source.unavailableReason}</p>
+        {!project && onAddProject && <Button onClick={onAddProject}>Add project</Button>}
+      </div>
+    );
+  }
   if (source.error) {
     return (
       <div className="view-empty-padded scm-problem" role="alert">

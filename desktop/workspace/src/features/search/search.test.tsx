@@ -60,6 +60,14 @@ describe('SearchView', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
+  it('offers Add project as the one action when there is no project', async () => {
+    const user = userEvent.setup();
+    const onAddProject = vi.fn();
+    render(<SearchView project={null} session={null} onOpenFile={vi.fn()} onError={vi.fn()} onAddProject={onAddProject} />);
+    await user.click(screen.getByRole('button', {name: 'Add project'}));
+    expect(onAddProject).toHaveBeenCalledTimes(1);
+  });
+
   it('does not search for an empty query', async () => {
     const user = userEvent.setup();
     render(<SearchView project={project} session={session as never} onOpenFile={vi.fn()} onError={vi.fn()} />);

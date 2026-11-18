@@ -258,7 +258,7 @@ function Frame(props: Props) {
           />
         );
       case 'search':
-        return <SearchView project={project} session={session} onOpenFile={openFile} onError={report} />;
+        return <SearchView project={project} session={session} onOpenFile={openFile} onError={report} onAddProject={props.onAddProject} />;
       case 'scm':
         return (
           <ScmView
@@ -268,6 +268,7 @@ function Frame(props: Props) {
             onOpenDiff={(path, side) => dispatch({type: 'openTab', kind: 'diff', ref: diffRef(side, path)})}
             onOpenFile={path => openFile(path)}
             onCheckoutChanged={refresh}
+            onAddProject={props.onAddProject}
           />
         );
       case 'sites':

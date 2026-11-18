@@ -1,5 +1,11 @@
 /* Source control side bar view: branch row, commit box, 32px file rows with hover actions, collapsed forms. Tokens only. */
 @layer surfaces {
+  .scm-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-12);
+  }
   .scm-view {
     display: flex;
     flex: 1;
