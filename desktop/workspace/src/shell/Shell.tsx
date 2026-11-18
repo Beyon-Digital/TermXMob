@@ -31,7 +31,6 @@ import {
   type WorkspaceMode,
   type StudioSection,
 } from '../lib/workspace-mode';
-import OrchestratorStatus from '../features/OrchestratorStatus';
 import {latestExecutionTask} from '../lib/conversation-messages';
 import {readSidebarPreference, saveSidebarPreference} from '../lib/sidebar-preferences';
 import '../workspace-shell.css';
@@ -39,12 +38,11 @@ import '../agent-theme.css';
 import {useSessionChanges} from '../lib/session-changes';
 import {workspaceFullscreen} from '../lib/workspace-fullscreen';
 import {workspaceFilePath} from '../lib/workspace-files';
-import {contextItem, type IncomingContext} from '../lib/context';
+import {type IncomingContext} from '../lib/context';
 import {lazy, Suspense, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {useLayout, type Layout} from '../lib/use-layout';
 import {Pin, Settings, Folder} from 'lucide-react';
 import {Button} from '../components/ui/button';
-import DockWorkspace from '../components/DockWorkspace';
 import {loadBindings, defaults, type Bindings} from '../lib/keybindings';
 import {
   commandAvailable,
@@ -58,6 +56,7 @@ import {
 import {useShortcuts} from './use-shortcuts';
 import AgentSidebar, {useSidebarState} from './AgentSidebar';
 import {CoordinationSidebar, InspectedTaskSupervisor} from './CoordinationSidebar';
+import AgentWorkspace from './AgentWorkspace';
 import DataHost from './DataHost';
 import ManagerOverlay from './ManagerOverlay';
 import SettingsHost from './SettingsHost';
@@ -88,13 +87,6 @@ import '../features/session-controls.css';
 import {folderName} from '../lib/path-label';
 import {json, request, type Project, type Session} from '../lib/api';
 const CompanionHabitat = lazy(() => import('../features/CompanionHabitat'));
-const Chat = lazy(() => import('../features/Chat'));
-const Workbench = lazy(() => import('../features/Workbench'));
-const ChangeReview = lazy(() => import('../features/ChangeReview'));
-const TerminalPanel = lazy(() => import('../features/TerminalPanel'));
-const BrowserSurface = lazy(() => import('../features/BrowserSurface'));
-const Artifacts = lazy(() => import('../features/Media'));
-const ComputerSurface = lazy(() => import('../features/ComputerSurface'));
 type LayoutSnapshot = {
   layout: Layout;
   dock: DockMap;
@@ -116,15 +108,13 @@ export default function Shell() {
 }
 
 function ShellBody({navigation}: {navigation: ShellNavigation}) {
-  const {auth, authEpoch, authNow, fence, locked, lockedNow, beginLock, openHostStop} = useAuth();
+  const {auth, authNow, fence, locked, lockedNow, beginLock, openHostStop} = useAuth();
   const report = useReport();
   const {error, clearError} = useErrorMessage();
   const {workspace, setWorkspaceState, manager, setManagerState, workspaceNow, managerNow} = navigation;
   const {
     projects,
     sessions,
-    engines,
-    providers,
     sessionsState,
     catalogState,
     selected,
@@ -137,7 +127,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     sessionCache,
     workspaceActive,
     load,
-    refresh,
   } = useWorkspaceData();
   const [theme, setTheme] = useTheme(),
     [addProjectOpen, setAddProjectOpen] = useState(false),
@@ -1346,186 +1335,47 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
                     if (matchMedia('(max-width:850px)').matches) setDataSidebarOpen(false);
                   }}
                 />
-                <div
-                  id="agent-workspace"
-                  className="workspace-dock-host"
-                  role="region"
-                  aria-label="Agent workspace"
-                  hidden={workspace !== 'agent'}
-                  inert={!!manager || workspace !== 'agent'}
-                  aria-hidden={manager || workspace !== 'agent' ? true : undefined}
-                >
-                  <DockWorkspace
-                    active={workspace === 'agent' && !manager && !locked}
-                    activation={panelActivation}
-                    onFullscreen={() => void toggleFullscreen()}
-                    onVisiblePanels={setVisiblePanels}
-                    map={dock}
-                    onChange={changeDock}
-                    rightVisible={right}
-                    bottomVisible={bottom}
-                    rightWidth={rightWidth}
-                    onRightWidth={setRightWidth}
-                    geometry={dockGeometry}
-                    onGeometry={setDockGeometry}
-                    onResizeStart={rememberLayout}
-                    onDetach={panel => detachSurface(panelSurface(panel))}
-                    children={{
-                      editor: visited.has('editor') ? (
-                        <Workbench
-                          ownerId={auth.principal.id}
-                          project={project}
-                          onAddProject={() => setAddProjectOpen(true)}
-                          session={session}
-                          onTargetChange={refresh}
-                          fileRequest={fileRequest}
-                          reviewMode={false}
-                          visible={workspaceActive && visiblePanels.includes('editor')}
-                          bottom={bottom}
-                          onError={report}
-                        />
-                      ) : null,
-                      conversation: (
-                        <div className="conversation-home">
-                          <OrchestratorStatus
-                            presentation="sidebar"
-                            sidebarTarget={coordination.target}
-                            selectedTasks={coordination.tasks}
-                            sidebarVisible={coordination.visible}
-                            onInspectTask={coordination.inspect}
-                            onSummary={coordination.receiveSummary}
-                            quietWhenIdle
-                            ownerId={auth.principal.id}
-                            selected={selected}
-                            enabled={
-                              workspaceActive && (visiblePanels.includes('conversation') || coordination.open)
-                            }
-                            onPrimary={setPrimaryId}
-                            onOpen={openConversation}
-                          />
-                          {mainState === 'failed' && !selected && (
-                            <div className="main-agent-error" role="alert">
-                              <p>
-                                Your main agent could not be opened. Your existing chats are still available.
-                              </p>
-                              <Button variant="outline" onClick={() => void openMainAgent()}>
-                                Retry main agent
-                              </Button>
-                            </div>
-                          )}
-                          <Chat
-                            coordinating={selected === primaryId}
-                            onConfigureAgent={() => setManager('models')}
-                            onOpenVoiceSettings={() => setManager('voice')}
-                            visible={workspaceActive && visiblePanels.includes('conversation')}
-                            ownerId={auth.principal.id}
-                            session={session}
-                            engines={engines}
-                            providers={providers}
-                            projects={projects}
-                            onHistory={() => {
-                              const epoch = authEpoch.current,
-                                id = selected;
-                              if (id)
-                                sessionCache.current
-                                  .history(id)
-                                  .then(value => {
-                                    if (epoch === authEpoch.current && selection.current === id)
-                                      setSession(value);
-                                  })
-                                  .catch(reason => {
-                                    if (epoch === authEpoch.current) report(reason);
-                                  });
-                            }}
-                            onSelect={openConversation}
-                            onRefresh={refresh}
-                            onError={report}
-                            incoming={incoming}
-                            onOpenSurface={openSurface}
-                            onOpenFile={openFile}
-                            changes={
-                              changesSource.data
-                                ? {
-                                    files: changesSource.data.files.length,
-                                    ...(changesSource.data.counts_complete
-                                      ? {
-                                          additions: changesSource.data.additions,
-                                          deletions: changesSource.data.deletions,
-                                        }
-                                      : {}),
-                                    loading: changesSource.loading,
-                                  }
-                                : undefined
-                            }
-                          />
-                        </div>
-                      ),
-                      review: visited.has('review') ? (
-                        <ChangeReview
-                          ownerId={auth.principal.id}
-                          project={project}
-                          session={session}
-                          visible={workspaceActive && visiblePanels.includes('review')}
-                          source={changesSource}
-                          onError={report}
-                          onOpenFile={openFile}
-                        />
-                      ) : null,
-                      terminal: visited.has('terminal') ? (
-                        <TerminalPanel
-                          ownerId={auth.principal.id}
-                          project={project}
-                          workspaceSession={session?.id}
-                          executionRoot={session?.cwd || project?.path}
-                          onError={report}
-                        />
-                      ) : null,
-                      browser: visited.has('browser') ? (
-                        <BrowserSurface
-                          visible={workspaceActive && visiblePanels.includes('browser')}
-                          locked={locked}
-                          projectId={project?.id}
-                          taskId={taskId}
-                          onContext={context => {
-                            const item = contextItem(context);
-                            if (!selected || !item) {
-                              report(new Error('Select a conversation before attaching browser context.'));
-                              return;
-                            }
-                            setIncoming({
-                              id: crypto.randomUUID(),
-                              sessionId: selected,
-                              text: '',
-                              attachments: [],
-                              context: [item],
-                            });
-                            setRight(true);
-                            focusPanel('conversation');
-                          }}
-                        />
-                      ) : null,
-                      computer: visited.has('computer') ? (
-                        <ComputerSurface
-                          visible={workspaceActive && visiblePanels.includes('computer')}
-                          onError={report}
-                          onSection={setManager}
-                        />
-                      ) : null,
-                      artifacts: visited.has('artifacts') ? (
-                        <Artifacts
-                          key={auth.principal.id}
-                          ownerId={auth.principal.id}
-                          projectId={project?.id || null}
-                          visible={workspaceActive && visiblePanels.includes('artifacts')}
-                          onContext={(text, attachments) => {
-                            setIncoming({id: crypto.randomUUID(), sessionId: selected, text, attachments});
-                            chooseLayout('chat');
-                          }}
-                        />
-                      ) : null,
-                    }}
-                  />
-                </div>
+                <AgentWorkspace
+                  workspace={workspace}
+                  manager={manager}
+                  project={project}
+                  visited={visited}
+                  visiblePanels={visiblePanels}
+                  onVisiblePanels={setVisiblePanels}
+                  dock={dock}
+                  onDockChange={changeDock}
+                  right={right}
+                  bottom={bottom}
+                  rightWidth={rightWidth}
+                  onRightWidth={setRightWidth}
+                  dockGeometry={dockGeometry}
+                  onGeometry={setDockGeometry}
+                  onResizeStart={rememberLayout}
+                  panelActivation={panelActivation}
+                  onFullscreen={() => void toggleFullscreen()}
+                  onDetach={panel => detachSurface(panelSurface(panel))}
+                  fileRequest={fileRequest}
+                  changesSource={changesSource}
+                  taskId={taskId}
+                  incoming={incoming}
+                  onIncoming={value => setIncoming(value)}
+                  mainState={mainState}
+                  primaryId={primaryId}
+                  onPrimary={setPrimaryId}
+                  coordination={coordination}
+                  onAddProject={() => setAddProjectOpen(true)}
+                  onOpenConversation={openConversation}
+                  onOpenMainAgent={() => void openMainAgent()}
+                  onManager={setManager}
+                  onOpenSurface={openSurface}
+                  onOpenFile={openFile}
+                  onRevealConversation={() => {
+                    setRight(true);
+                    focusPanel('conversation');
+                  }}
+                  onShowChat={() => chooseLayout('chat')}
+                  onError={report}
+                />
                 <CoordinationSidebar coordination={coordination} />
               </>
             </Suspense>
