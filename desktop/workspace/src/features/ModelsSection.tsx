@@ -56,8 +56,25 @@ export default function ModelsSection({admin,me,projectId,onCapabilitiesChanged}
   const [editing,setEditing]=useState<AgentProvider|null>(null),[testing,setTesting]=useState<AgentProvider|null>(null);
   const providers=data?.agent_providers||[],engines=data?.engines||[];
   const matches=rowMatcher(search,me.session_id);
-  const saveAccount=(message:string)=>(input:ProviderAccountInput)=>mutate(()=>gql(saveProvider,{input:{...input}}),message);
-  const refreshModels=(provider:AgentProvider)=>mutate(()=>gql('mutation($id:String!){refresh_provider_models(provider_id:$id){id model}}',{id:provider.id}),'Model catalog refreshed');
+  const saveAccount=(message:string)=>(input:ProviderAccountInput)=>mutate(async()=>{
+    const saved=await gql<{save_agent_provider?:{id:string}}>(saveProvider,{input:{...input}});
+    // Saving never contacted the provider, so a typo'd key looked saved. When a key was just entered, load the model
+    // list now: a wrong key or address fails here, with a reason, while the form is still open to correct.
+    const id=saved.save_agent_provider?.id;
+    if(id&&input.api_key){
+      const listed=await gql<{refresh_provider_models?:{catalog_error?:string|null}}>('mutation($id:String!){refresh_provider_models(provider_id:$id){id catalog_error}}',{id});
+      const failure=listed.refresh_provider_models?.catalog_error;
+      if(failure)throw new Error(`Saved, but the model list could not be loaded: ${failure}. Check the API key and the server address.`);
+    }
+    return saved;
+  },message);
+  const refreshModels=(provider:AgentProvider)=>mutate(async()=>{
+    const result=await gql<{refresh_provider_models?:{catalog_error?:string|null}}>('mutation($id:String!){refresh_provider_models(provider_id:$id){id model catalog_error}}',{id:provider.id});
+    // The host stores a failed discovery on the account instead of raising, so the mutation itself still succeeds.
+    const failure=result.refresh_provider_models?.catalog_error;
+    if(failure)throw new Error(`Could not refresh the model list: ${failure}. Check the API key and the server address, then try again.`);
+    return result;
+  },'Model catalog refreshed');
   const hasCredential=providers.some(provider=>provider.secret_configured);
   return <ManagerPage section="models" projectId={projectId} load={{data,loading,busy,error:error||loadError,notice,reload}} search={{label:"Models & engines",value:search,onChange:setSearch,count:providers.length+engines.length}}>
     <>
@@ -65,17 +82,20 @@ export default function ModelsSection({admin,me,projectId,onCapabilitiesChanged}
       {providers.filter(matches).map(provider=><Item key={provider.id} title={provider.name||provider.id} meta={`${providerKindLabel(provider.kind)} · ${provider.secret_configured?'Credential configured':'Credential required'} · ${provider.model||'All discovered models'}`}>
         <ActionButton busy={busy} onClick={()=>setTesting(provider)}>Test connection</ActionButton>
         {admin&&EDITABLE_KINDS.includes(provider.kind)&&<ActionButton busy={busy} onClick={()=>setEditing(provider)}>Edit account</ActionButton>}
-        {admin&&<ActionButton busy={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}',{id:provider.id}),'Provider removed')}>Remove account</ActionButton>}
+        {admin&&provider.kind!=='chatgpt'&&<ActionButton busy={busy} onClick={()=>void mutate(()=>gql('mutation($id:String!){delete_agent_provider(provider_id:$id){ok}}',{id:provider.id}),'Provider removed')}>Remove account</ActionButton>}
+        {provider.catalog_error&&<p className="manager-error" role="status">Model list failed: {provider.catalog_error}</p>}
       </Item>)}
       {admin&&editing&&<ProviderAccountForm key={editing.id} account={providerAccount(providers.find(row=>row.id===editing.id)||editing)} busy={busy} onCancel={()=>setEditing(null)} onRefresh={()=>refreshModels(editing)} onSave={async input=>{const result=await saveAccount('Provider account updated')(input);if(result!==null)setEditing(null);return result}}/>}
       {admin&&<details key={hasCredential?'has-account':'first-account'} open={!hasCredential}><summary>Add provider account</summary><ProviderAccountForm busy={busy} onSave={saveAccount('Provider account saved')}/></details>}
       <ModelRoutingForm providers={providers} routing={data?.model_routing||{}} disabled={!admin} onSave={routes=>mutate(()=>gql('mutation($input:ModelRoutingInput!){set_model_routing(input:$input)}',{input:{routing:routes}}),'Model routing saved')}/>
       <h3>Installed engines</h3>
       {engines.filter(matches).map(engine=><Item key={engine.id} title={engine.label} meta={`${engine.installed?'Installed':'Needs installation'} · ${engineAuthLabel(engine.auth_state)}${engine.version?` · ${engine.version}`:''}`}>
+        {engine.error&&<p className="manager-error" role="status">{engine.error}</p>}
+        {engine.auth_detail&&!engine.error&&<p className="manager-help">{engine.auth_detail}</p>}
         <ActionButton busy={busy} onClick={()=>setPreview(engine)}>Inspect capabilities</ActionButton>
         {engine.id==='internal'
           ?<small className="manager-help engine-models-hint" id="internal-engine-models-hint">The TermX agent has no model list of its own. Its models come from your provider accounts. Open Edit account on a provider account and use Refresh models there.</small>
-          :<ActionButton busy={busy} onClick={()=>void mutate(async()=>{const value=await gql('query($id:String!){engine_models(engine_id:$id)}',{id:engine.id});setPreview(value);return value},'Model catalog refreshed',{refresh:false})}>Refresh models</ActionButton>}
+          :<ActionButton busy={busy} onClick={()=>void mutate(async()=>{await gql('mutation($id:String!){refresh_engine_catalogue(engine_id:$id)}',{id:engine.id});const value=await gql('query($id:String!){engine_models(engine_id:$id)}',{id:engine.id});setPreview(value);return value},'Engine checked and model catalog refreshed')}>Refresh models</ActionButton>}
         <EngineAuthentication engine={engine} busy={busy} canAuthenticate={(me.principal?.scopes||[]).includes('agent-run')} onAuthenticate={method=>mutate(async()=>{const result=await gql<{authenticate_engine?:{ok?:boolean;message?:string}}>('mutation($id:String!,$method:String!){authenticate_engine(engine_id:$id,method_id:$method)}',{id:engine.id,method});if(result.authenticate_engine?.ok!==true)throw new Error(result.authenticate_engine?.message||'The engine did not confirm sign-in.');return result},'Engine sign-in completed')}/>
       </Item>)}
       {Boolean(preview)&&<details open><summary>Selected engine capabilities/catalog</summary><Json value={preview}/></details>}

@@ -27,8 +27,13 @@ export function configuredModels(source?: Pick<ModelSource, 'model'>): string[] 
 /** Models a chat can use on an account: the checked ones, or every discovered one when none is singled out ("every model checked"). */
 export function chatModels(source?: Pick<ModelSource, 'model' | 'models' | 'model_catalog'>): string[] {
   const chosen = configuredModels(source);
-  return chosen.length ? chosen : [...new Set(source?.models?.length ? source.models : Object.keys(source?.model_catalog || {}))];
+  const all = chosen.length ? chosen : [...new Set(source?.models?.length ? source.models : Object.keys(source?.model_catalog || {}))];
+  // Discovery on api.openai.com also lists embedding, speech and image models. Keep them selectable but never first,
+  // because callers take [0] as the default. Mirrors _resolve_model on the host.
+  return [...all.filter(id => !NON_CHAT_MODEL.test(id)), ...all.filter(id => NON_CHAT_MODEL.test(id))];
 }
+
+const NON_CHAT_MODEL = /(^|[-_/.:])(embed(ding)?s?|whisper|tts|dall-e|moderation|transcribe|realtime|image|audio|davinci|babbage)([-_/.:\d]|$)/i;
 
 /** Models a route can use: what the host reports, else the selected models plus whatever discovery found. */
 export function providerModels(source: ModelSource): string[] {

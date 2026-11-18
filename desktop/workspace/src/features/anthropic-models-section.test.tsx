@@ -106,3 +106,61 @@ it('offers Anthropic models in the model routing picker with their cost shown as
   fireEvent.change(model, {target: {value: 'claude-opus-5-5'}});
   expect(await screen.findByText(/Cost unpriced/)).toBeInTheDocument();
 });
+
+it('does not offer Remove account for a ChatGPT account, which the host cannot remove here', async () => {
+  host({providers: [gptAccount, {...claude, id: 'chat', kind: 'chatgpt', name: 'ChatGPT plan'}]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  await screen.findAllByText(/ChatGPT plan/);
+  expect(screen.getAllByRole('button', {name: 'Remove account'})).toHaveLength(1);
+});
+
+it('shows why a provider or engine is unavailable instead of only a status word', async () => {
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/auth/me') return {principal: {id: 'p', scopes: ['host-admin']}} as never;
+    JSON.parse(String(init?.body || '{}'));
+    return {data: {
+      engines: [{id: 'codex', label: 'Codex', installed: true, auth_state: 'unauthenticated', auth_detail: 'Run codex login on this host', error: null}, {id: 'zed', label: 'Zed', installed: false, error: 'zed executable not found'}],
+      agent_providers: [{...gptAccount, catalog_error: 'The provider rejected the API key'}], acp_registry: [], model_routing: {},
+    }} as never;
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  expect(await screen.findByText('Run codex login on this host')).toBeInTheDocument();
+  expect(screen.getByText('zed executable not found')).toBeInTheDocument();
+  expect(screen.getByText(/Model list failed: The provider rejected the API key/)).toBeInTheDocument();
+});
+
+it('refreshing an engine re-probes it before reading its models', async () => {
+  const calls = host();
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/auth/me') return {principal: {id: 'p', scopes: ['host-admin']}} as never;
+    const body = JSON.parse(String(init?.body || '{}'));
+    calls.push({query: body.query, variables: body.variables});
+    if (body.query?.includes('engine_models')) return {data: {engine_models: ['m1']}} as never;
+    return {data: {engines: [{id: 'codex', label: 'Codex', installed: true, auth_state: 'authenticated'}], agent_providers: [], acp_registry: [], model_routing: {}}} as never;
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Refresh models'}));
+  await waitFor(() => expect(calls.some(call => call.query?.includes('engine_models'))).toBe(true));
+  const queries = calls.map(call => call.query).filter(query => /refresh_engine_catalogue|engine_models/.test(query || ''));
+  expect(queries[0]).toContain('refresh_engine_catalogue');
+  expect(queries[1]).toContain('engine_models');
+});
+
+it('reports a failed model refresh instead of saying it was refreshed', async () => {
+  const calls = host({providers: [gptAccount]});
+  const base = mocked.getMockImplementation()!;
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}'));
+    if (body.query?.includes('refresh_provider_models')) {
+      calls.push({query: body.query, variables: body.variables});
+      return {data: {refresh_provider_models: {id: 'oa', model: 'gpt', catalog_error: 'The provider rejected the API key'}}} as never;
+    }
+    return base(path, init);
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Edit account'}));
+  const form = await screen.findByRole('form', {name: 'Edit provider account'});
+  fireEvent.click(within(form).getByRole('button', {name: 'Refresh models'}));
+  expect(await screen.findByText(/Could not refresh the model list: The provider rejected the API key/)).toBeInTheDocument();
+  expect(screen.queryByText('Model catalog refreshed')).not.toBeInTheDocument();
+});

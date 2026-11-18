@@ -872,19 +872,31 @@ def _provider_http_error(status: int, detail: str) -> str:
         parsed = json.loads(detail)
         error = parsed.get("error") if isinstance(parsed, dict) else None
         code = error.get("code") if isinstance(error, dict) else None
-        message = error.get("message") if isinstance(error, dict) else parsed.get("detail")
+        if isinstance(error, dict):
+            message = error.get("message")
+        elif isinstance(error, str):
+            message = error  # {"error": "unauthorized"}: a plain string body is a message too
+        else:
+            message = parsed.get("detail") if isinstance(parsed, dict) else None
     except (json.JSONDecodeError, AttributeError):
         code, message = None, None
     if code and str(code).startswith(("subscription_sharing_", "chatpass_v2_")):
         return f"ChatGPT request failed ({status}): {code}"
     if status == 429:
         return "Provider is temporarily rate limited. Try again shortly or choose another model."
-    if status == 400:
-        return "Provider rejected the request. Check that the selected model supports the configured tools."
     clean = redact(str(message or "")).strip()
-    if not clean or len(clean) > 240 or clean.startswith(("{", "[")):
-        clean = "The provider returned an error."
-    return f"Provider request failed ({status}): {clean}"
+    if not clean or len(clean) > 240 or clean.startswith(("{", "[", "<")):
+        clean = ""
+    said = f" It said: {clean}" if clean else ""
+    # Name the likely cause: the same status means different things to the person fixing the setup.
+    if status in {401, 403}:
+        return f"The provider rejected the API key ({status}). Check the key, and that it belongs to this server.{said}"
+    if status == 404:
+        return (f"The provider does not know this address or model (404). Check that the server address ends with its API path, "
+                f"for example /v1, and that the model name is spelled as the provider lists it.{said}")
+    if status == 400:
+        return f"The provider rejected the request (400).{said or ' If it mentions tools, check that the selected model supports them.'}"
+    return f"Provider request failed ({status}): {clean or 'The provider returned an error.'}"
 
 
 def _task_input(prompt: str, cwd: str, manifest: dict[str, Any]) -> str:

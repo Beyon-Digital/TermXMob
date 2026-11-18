@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -66,11 +67,13 @@ class ClaudeEngine:
     def descriptor(self) -> EngineDescriptor:
         if self._executable is None:
             self._executable = resolve_executable("claude", override=self._override)
+        # The SDK ships its own CLI, so Claude works without `claude` on PATH. Report that instead of "not installed".
+        located = self._executable or _bundled_cli()
         return EngineDescriptor(
             id=self.id,
             label=self.label,
-            installed=self._executable is not None,
-            executable=self._executable,
+            installed=located is not None,
+            executable=located,
             auth_state=self._auth_state(),
             auth_detail="ANTHROPIC_API_KEY" if os.environ.get("ANTHROPIC_API_KEY") else "",
             location="sdk-bundled",
@@ -123,8 +126,8 @@ class ClaudeEngine:
         if self._executable:
             opts_kwargs["cli_path"] = self._executable
         env = dict(self._spawn_env or os.environ)
-        env.pop("TERMX_PASSCODE", None)
-        env.pop("TERMX_TOKEN", None)
+        from .env import strip_host_secrets
+        strip_host_secrets(env)
         # Never forward another agent's credentials.
         env.pop("OPENAI_API_KEY", None)
         opts_kwargs["env"] = env
@@ -631,3 +634,13 @@ class ClaudeEngine:
         ids = {"session_id": binding.native_session_id}
         ids.update(native or {})
         self._event_sink(binding.binding_id, EngineEvent(etype, payload, ids))
+
+
+def _bundled_cli() -> str | None:
+    """The CLI binary packaged inside claude-agent-sdk, when this install has one."""
+    try:
+        import claude_agent_sdk
+    except ImportError:
+        return None
+    path = Path(claude_agent_sdk.__file__).parent / "_bundled" / ("claude.exe" if os.name == "nt" else "claude")
+    return str(path) if path.is_file() else None

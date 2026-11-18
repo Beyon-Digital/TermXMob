@@ -10,10 +10,26 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import stat
 import sys
 from pathlib import Path
+
+_HOST_SECRET = re.compile(r"^TERMX_AI_.+_API_KEY$", re.I)
+
+
+def strip_host_secrets(env: dict[str, str]) -> dict[str, str]:
+    """Remove the host's own credentials from an environment a child engine inherits.
+
+    ``TERMX_PASSCODE`` and ``TERMX_TOKEN`` are the host's access secrets. ``TERMX_AI_<ID>_API_KEY`` is the documented
+    headless way to give the host a provider key (including the web-search key); an engine subprocess, or a custom
+    runner with no ``env_names`` allow-list, must not inherit another account's key.
+    """
+    for name in [name for name in env if name in {"TERMX_PASSCODE", "TERMX_TOKEN"} or _HOST_SECRET.match(name)]:
+        env.pop(name, None)
+    return env
+
 
 # Candidate dirs appended for engine lookup regardless of PATH. Order matters:
 # explicit user dirs first (newest installs), then system package dirs.

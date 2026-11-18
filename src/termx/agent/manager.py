@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import mimetypes
 import shutil
 import uuid
@@ -394,8 +395,7 @@ class AgentManager:
             wire = "messages"
             # No models typed in: offer the current Claude models, default first.
             model = model if model.strip() else "\n".join(ANTHROPIC_MODELS)
-        if not base_url.startswith(("https://", "http://")):
-            raise ValueError("provider URL must use HTTP or HTTPS")
+        base_url = _checked_base_url(base_url)
         if kind != "anthropic" and wire is not None and wire not in {"responses", "chat"}:
             raise ValueError("provider wire must be 'responses' or 'chat'")
         if kind == "anthropic":
@@ -3639,6 +3639,30 @@ def _output_cap(meta: dict[str, Any] | None, limits: dict[str, Any] | None = Non
     return min(caps) if caps else None
 
 
+def _checked_base_url(value: str) -> str:
+    """A provider base URL the adapters can build requests from, with nothing secret or ambiguous in it.
+
+    Rejects what ``startswith("http")`` let through: no host (``https://``), credentials in the URL (they would be
+    returned to every reader of the provider list and logged), and a query or fragment (the adapters append
+    ``/chat/completions`` to the path, which a query string would swallow).
+    """
+    text = (value or "").strip()
+    try:
+        parts = urlsplit(text)
+        parts.port  # noqa: B018 - raises ValueError for a non-numeric or out-of-range port
+    except ValueError:
+        raise ValueError("provider URL is not a valid address") from None
+    if parts.scheme.lower() not in {"http", "https"}:
+        raise ValueError("provider URL must use HTTP or HTTPS")
+    if not parts.hostname:
+        raise ValueError("provider URL must include a host, for example https://api.example.com/v1")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("provider URL must not contain a username or password; use the API key field")
+    if parts.query or parts.fragment:
+        raise ValueError("provider URL must not contain a query string or fragment")
+    return text
+
+
 def _origin(url: str) -> tuple[str, str, int | None]:
     parts = urlsplit(url)
     try:
@@ -3655,10 +3679,17 @@ def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:
         raise ValueError("provider has no model configured")
     chosen = (requested or "").strip()
     if not chosen:
-        return models[0]
+        # A discovered list from api.openai.com includes embedding, speech and image models; the first entry of an
+        # alphabetical list was often one of those. Prefer a model that can chat.
+        return next((model for model in models if not _NON_CHAT_MODEL.search(model)), models[0])
     if chosen not in models:
         raise ValueError("model is not configured on this provider")
     return chosen
+
+
+_NON_CHAT_MODEL = re.compile(
+    r"(^|[-_/.:])(embed(ding)?s?|whisper|tts|dall-e|moderation|transcribe|realtime|image|audio|davinci|babbage)([-_/.:\d]|$)", re.I
+)
 
 
 def _decode_images(attachments: list[dict[str, Any]] | None) -> list[tuple[str, str, bytes]]:
