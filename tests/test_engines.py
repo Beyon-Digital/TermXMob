@@ -669,6 +669,40 @@ def test_gateway_marks_sessions_lost_on_recover(tmp_path):
         "sending a new instruction; no work was replayed.")
 
 
+def test_recover_marks_lost_sessions_resumable_only_when_the_engine_can_resume(tmp_path):
+    """A lost native session is flagged ``resumable`` when its adapter supports native resume, and the failed
+    task's event says so (the resume action is a new instruction in the same conversation, which re-attaches)."""
+    from termx.engines.types import EngineCapabilities
+
+    class Adapter:
+        def __init__(self, engine_id: str, resume: str) -> None:
+            self.id, self._resume = engine_id, resume
+
+        def descriptor(self):
+            return type("D", (), {"id": self.id})()
+
+        def capabilities(self):
+            return EngineCapabilities(resume=self._resume)
+
+    store = _store(tmp_path)
+    emitted: list = []
+    gateway = EngineGateway(store, lambda task_id, kind, payload: emitted.append((task_id, kind, payload)) or {})
+    gateway._adapters["codex"] = Adapter("codex", "supported")
+    gateway._adapters["acp-x"] = Adapter("acp-x", "unverified")
+    task = store.create_task(prompt="x", cwd="/tmp", provider_id="engine:codex", model="", limits={}, engine="codex", status="running")
+    store.save_engine_session("b1", task_id=task["id"], engine="codex", native_session_id="thr_x", conversation_id="conv-1", status="active")
+    store.save_engine_session("b2", task_id=None, engine="acp-x", native_session_id="s_y", status="idle")
+    store.save_engine_session("b3", task_id=None, engine="gone-engine", native_session_id="s_z", status="idle")
+    assert gateway.recover() == 3
+    assert store.get_engine_session("b1")["status"] == "lost" and store.get_engine_session("b1")["payload"]["resumable"] is True
+    assert store.get_engine_session("b1")["payload"]["lost_reason"] == "host_restart"
+    assert store.get_engine_session("b2")["payload"]["resumable"] is False
+    assert store.get_engine_session("b3")["payload"]["resumable"] is False, "an engine that is not registered is not claimed to resume"
+    [(_, kind, payload)] = [item for item in emitted if item[1] == "task.failed"]
+    assert payload["resumable"] is True and payload["conversation_id"] == "conv-1" and payload["binding_id"] == "b1"
+    assert payload["message"].startswith("Host restarted during this turn")
+
+
 def test_gateway_recover_counts_a_task_with_a_bound_session_once(tmp_path):
     store = _store(tmp_path)
     task = store.create_task(prompt="x", cwd="/tmp", provider_id="engine:codex",

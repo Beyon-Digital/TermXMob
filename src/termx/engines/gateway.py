@@ -1051,8 +1051,12 @@ class EngineGateway:
         affected = set()
         for record in self._store.list_engine_sessions():
             if record["status"] in _ENGINE_ACTIVE:
+                # ``resumable`` tells clients a new instruction in the same conversation will re-attach the
+                # native session (the adapter's own resume), instead of starting from nothing.
                 self._store.update_engine_session(
-                    record["binding_id"], status="lost")
+                    record["binding_id"], status="lost",
+                    payload={**(record.get("payload") or {}), "resumable": self._resume_supported(record["engine"]),
+                             "lost_reason": "host_restart"})
                 affected.add(record['binding_id'])
             # A persisted approval cannot answer a process from an earlier host
             # lifetime, even if its task was already terminal when the host died.
@@ -1074,9 +1078,20 @@ class EngineGateway:
                     if record else 'Host restarted during native startup. Inspect the engine before sending a new instruction; no work was replayed.')
                 self._deny_lost_native_approvals(task['id'])
                 self._store.update_task(task['id'], status='cancelled' if cancelling else 'failed', error=message)
-                self._emit(task['id'], 'task.cancelled' if cancelling else 'task.failed', {'message':message})
+                event = {'message': message}
+                if record and (record.get('payload') or {}).get('resumable'):
+                    event.update(resumable=True, engine=record['engine'], binding_id=record['binding_id'],
+                                 conversation_id=record.get('conversation_id'))
+                self._emit(task['id'], 'task.cancelled' if cancelling else 'task.failed', event)
                 affected.add(record['binding_id'] if record else 'task:'+task['id'])
         return len(affected)
+
+    def _resume_supported(self, engine: str) -> bool:
+        adapter = self._adapters.get(engine)
+        try:
+            return bool(adapter is not None and adapter.capabilities().resume == "supported")
+        except Exception:  # noqa: BLE001 - an adapter that cannot answer is not claimed to resume
+            return False
 
     def _deny_lost_native_approvals(self, task_id: str) -> None:
         for approval in self._store.approvals(task_id):

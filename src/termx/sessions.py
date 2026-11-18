@@ -5,6 +5,7 @@ import json
 import os
 import re
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -83,6 +84,162 @@ class ReplayBuffer:
 
     def dump(self) -> bytes:
         return b"".join(self._chunks)
+
+
+class _HeldProc:
+    """The slice of ``subprocess.Popen`` the session layer reads, backed by a holder-owned process."""
+
+    def __init__(self, terminal: "HeldTerminal") -> None:
+        self._terminal = terminal
+
+    @property
+    def pid(self) -> int | None:
+        return self._terminal.pid
+
+    @property
+    def returncode(self) -> int | None:
+        return self._terminal.exit_code()
+
+    def poll(self) -> int | None:
+        return self._terminal.exit_code()
+
+    def wait(self, timeout: float | None = None) -> int | None:
+        if not self._terminal.wait_exit(timeout):
+            raise subprocess.TimeoutExpired("held terminal", timeout or 0)
+        return self._terminal.exit_code()
+
+    def send_signal(self, sig: int) -> None:
+        for name, value in SIGNALS.items():
+            if value == sig:
+                self._terminal.send_signal(name)
+                return
+
+
+class HeldTerminal:
+    """A terminal whose PTY is owned by the PTY holder process (see ``pty_holder.py``).
+
+    Same interface as ``PosixTerminal``: the session layer cannot tell the difference, except
+    that the process outlives this daemon. Output arrives from the holder client's reader thread.
+    """
+
+    MAX_QUEUED = 4 * 1024 * 1024
+
+    def __init__(self, client: object, sid: str, rows: int, cols: int) -> None:
+        self.client = client
+        self.sid = sid
+        self.rows, self.cols = rows, cols
+        self.pid: int | None = None
+        self.master_fd = -1
+        self.offset = 0  # bytes of output seen, in the holder's coordinates (resumes a dropped connection)
+        self.proc = _HeldProc(self)
+        self._cond = threading.Condition()
+        self._chunks: deque[bytes] = deque()
+        self._queued = 0
+        self._exited = False
+        self._exit_code: int | None = None
+        self._lost = False
+
+    # -- fed by the holder client's reader thread -----------------------------
+
+    def _feed(self, data: bytes) -> None:
+        with self._cond:
+            self.offset += len(data)
+            self._chunks.append(data)
+            self._queued += len(data)
+            while self._queued > self.MAX_QUEUED and len(self._chunks) > 1:
+                self._queued -= len(self._chunks.popleft())
+            self._cond.notify_all()
+
+    def _set_exit(self, code: int | None) -> None:
+        with self._cond:
+            self._exited = True
+            self._exit_code = code
+            self._cond.notify_all()
+
+    def _set_lost(self) -> None:
+        with self._cond:
+            self._lost = True
+            self._cond.notify_all()
+
+    # -- the PosixTerminal interface ------------------------------------------
+
+    def read(self, timeout: float = 0.25) -> bytes | None:
+        """Bytes, b'' at end of output, or None when idle."""
+        with self._cond:
+            if not self._chunks and not (self._exited or self._lost):
+                self._cond.wait(timeout)
+            if self._chunks:
+                data = self._chunks.popleft()
+                self._queued -= len(data)
+                return data
+            if self._exited or self._lost:
+                return b""
+            return None
+
+    def write(self, data: bytes) -> None:
+        if not data or self._exited or self._lost:
+            return
+        from termx.pty_holder_client import HolderError
+
+        try:
+            self.client.write(self.sid, data)  # type: ignore[attr-defined]
+        except HolderError:
+            return
+
+    def send_signal(self, name: str) -> bool:
+        if self._exited or self._lost:
+            return False
+        from termx.pty_holder_client import HolderError
+
+        try:
+            return bool(self.client.signal(self.sid, name.lower()))  # type: ignore[attr-defined]
+        except HolderError:
+            return False
+
+    def resize(self, rows: int, cols: int) -> None:
+        self.rows, self.cols = rows, cols
+        if self._exited or self._lost:
+            return
+        from termx.pty_holder_client import HolderError
+
+        try:
+            self.client.resize(self.sid, rows, cols)  # type: ignore[attr-defined]
+        except HolderError:
+            return
+
+    def alive(self) -> bool:
+        return not (self._exited or self._lost)
+
+    def exit_code(self) -> int | None:
+        return self._exit_code
+
+    def wait_exit(self, timeout: float | None) -> bool:
+        with self._cond:
+            if not (self._exited or self._lost):
+                self._cond.wait(timeout)
+            return self._exited or self._lost
+
+    def kill(self, timeout: float = 1.5) -> None:
+        """End the process and make the holder forget it."""
+        from termx.pty_holder_client import HolderError
+
+        try:
+            if self._exited or self._lost:
+                self.client.forget(self.sid)  # type: ignore[attr-defined]
+            else:
+                self.client.kill(self.sid, timeout)  # type: ignore[attr-defined]
+        except HolderError:
+            pass
+        if not self._lost:
+            self._set_exit(self._exit_code)
+
+    def detach(self) -> None:
+        """Let go without ending the process: it keeps running in the holder."""
+        try:
+            self.client.release(self.sid)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - best effort at shutdown
+            pass
+        self._set_lost()
 
 
 _INTEGRATION_DIR: Path | None = None
@@ -178,6 +335,11 @@ class Session:
     cwd: str = field(default_factory=lambda: str(Path.home()))
     shell: str = field(default_factory=default_shell)
     sandbox_profile: str = "host"
+    # Complete child environment for the host profile (callers scrub it); None
+    # inherits the daemon's. Restricted profiles always build their own.
+    env: dict[str, str] | None = None
+    # PTY holder client: when set the terminal is owned by the holder process and survives this daemon.
+    holder: object | None = None
     master_fd: int = -1
     proc: object | None = None
     replay: ReplayBuffer = field(default_factory=ReplayBuffer)
@@ -210,13 +372,13 @@ class Session:
         elif self.sandbox_profile != "host":
             argv, env = self._restricted_launch()
         else:
-            env = os.environ.copy()
+            env = dict(self.env) if self.env is not None else os.environ.copy()
             env.setdefault("TERM", "xterm-256color")
             env.setdefault("COLORTERM", "truecolor")
             argv = with_shell_integration(self.argv, env)
         try:
             if terminal is None:
-                terminal = spawn_terminal(argv, self.cwd, env, self.rows, self.cols)
+                terminal = self._spawn(argv, env)
         except TerminalError:
             raise
         self._terminal = terminal
@@ -224,6 +386,70 @@ class Session:
         self.proc = getattr(terminal, "proc", None)
         self._reader = threading.Thread(target=self._read_loop, name=f"pty-{self.id}", daemon=True)
         self._reader.start()
+
+    def _spawn(self, argv: list[str], env: dict[str, str]):
+        """Direct child of this process, or (held mode) a terminal the PTY holder owns.
+
+        ``argv`` and ``env`` are final: for a restricted profile they already carry the sandbox
+        wrapper from ``_restricted_launch``; the holder execs exactly this and adds nothing.
+        """
+        holder = self.holder
+        if holder is None:
+            return spawn_terminal(argv, self.cwd, env, self.rows, self.cols)
+        from termx.pty_holder_client import HolderError, HolderRefused
+
+        terminal = HeldTerminal(holder, self.id, self.rows, self.cols)
+        meta = {
+            "title": self.title[:200], "cwd": self.cwd[:900], "shell": self.shell[:300],
+            "sandbox_profile": self.sandbox_profile, "created_at": self.created_at,
+            "argv0": os.path.basename(argv[0])[:200] if argv else "",
+        }
+        try:
+            info = holder.spawn(terminal, argv, self.cwd, env, self.rows, self.cols, meta)  # type: ignore[attr-defined]
+        except HolderRefused as exc:
+            raise TerminalError(str(exc)) from None
+        except HolderError as exc:
+            raise TerminalError(f"the PTY holder is unavailable: {exc}") from None
+        terminal.pid = info.get("pid")
+        return terminal
+
+    @property
+    def durable(self) -> bool:
+        """True when the process is owned by the PTY holder and so survives a daemon restart."""
+        return isinstance(self._terminal, HeldTerminal)
+
+    def adopt(self, terminal: "HeldTerminal", replay: bytes, *, exited: bool = False, exit_code: int | None = None) -> None:
+        """Take over a terminal the holder kept alive across a daemon restart, replay intact."""
+        self._terminal = terminal
+        self.master_fd = -1
+        self.proc = terminal.proc
+        self.holder = terminal.client
+        if replay:
+            self.replay.append(replay)
+            cwd, self._osc_buf = parse_osc7(replay)
+            if cwd:
+                self.live_cwd = self._reported_cwd = cwd
+            self._last_output_at = _time.monotonic()
+        if exited:
+            self.exited = True
+            self.exit_code = exit_code
+            return
+        self._reader = threading.Thread(target=self._read_loop, name=f"pty-{self.id}", daemon=True)
+        self._reader.start()
+
+    def detach(self) -> None:
+        """Stop managing this terminal without ending it; only meaningful for a held terminal."""
+        terminal = self._terminal
+        self.exited = True
+        if self._activity_task is not None and not self._activity_task.done():
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(self._activity_task.cancel)
+        if isinstance(terminal, HeldTerminal):
+            terminal.detach()
+        reader = self._reader
+        if reader is not None and reader.is_alive():
+            reader.join(timeout=0.5)
 
     def _restricted_launch(self) -> tuple[list[str], dict[str, str]]:
         """Route this terminal through the sandbox backend for its profile.
@@ -478,6 +704,18 @@ class Session:
         if reader is not None and reader.is_alive():
             reader.join(timeout=0.5)
 
+    def output_tail(self, max_bytes: int = 8192) -> bytes:
+        """The last ``max_bytes`` of replayed output (a status/read window, not a transcript)."""
+        with self._lock:
+            data = self.replay.dump()
+        return data[-max_bytes:] if max_bytes > 0 else b""
+
+    def quiet_seconds(self) -> float | None:
+        """Seconds since the last output chunk, or None when nothing was ever written."""
+        if not self._last_output_at:
+            return None
+        return max(0.0, _time.monotonic() - self._last_output_at)
+
     def snapshot(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -494,10 +732,72 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self, argv: list[str] | None = None) -> None:
+    def __init__(self, argv: list[str] | None = None, *, holder: object | None = None) -> None:
         self._argv = argv
         self._sessions: dict[str, Session] = {}
         self._seq = 0
+        # A ``HolderSupervisor``: None means every terminal is a direct child of this process.
+        self.holder = holder
+
+    def _holder_client(self) -> object | None:
+        if self.holder is None:
+            return None
+        from termx.pty_holder_client import HolderError
+
+        try:
+            return self.holder.acquire(create=True)  # type: ignore[attr-defined]
+        except HolderError as exc:
+            raise TerminalError(str(exc)) from None
+
+    def reattach(self) -> list[Session]:
+        """Rebuild sessions for terminals a previous daemon left running in the PTY holder (replay intact)."""
+        if self.holder is None:
+            return []
+        from termx.pty_holder_client import HolderError
+
+        client = self.holder.acquire(create=False)  # type: ignore[attr-defined]
+        if client is None:
+            return []
+        try:
+            listing = client.list()  # type: ignore[attr-defined]
+        except HolderError:
+            return []
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        adopted: list[Session] = []
+        for item in listing.get("sessions", []):
+            sid = item.get("id")
+            if not isinstance(sid, str) or sid in self._sessions:
+                continue
+            terminal = HeldTerminal(client, sid, int(item.get("rows", DEFAULT_ROWS)), int(item.get("cols", DEFAULT_COLS)))
+            try:
+                _info, replay = client.attach(terminal, None)  # type: ignore[attr-defined]
+            except HolderError:
+                continue
+            terminal.pid = item.get("pid")
+            meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+            argv0 = str(meta.get("argv0") or "")
+            self._seq += 1
+            session = Session(
+                id=sid,
+                title=str(meta.get("title") or f"{argv0 or 'terminal'} {self._seq}"),
+                created_at=float(item.get("created_at") or time()),
+                cols=terminal.cols,
+                rows=terminal.rows,
+                argv=[argv0] if argv0 else [],
+                cwd=str(meta.get("cwd") or Path.home()),
+                shell=str(meta.get("shell") or default_shell()),
+                sandbox_profile=str(meta.get("sandbox_profile") or "host"),
+                holder=client,
+            )
+            session.adopt(terminal, replay, exited=not item.get("alive", True), exit_code=item.get("exit_code"))
+            if loop is not None:
+                session.attach(loop)
+            self._sessions[sid] = session
+            adopted.append(session)
+        return adopted
 
     def create(
         self,
@@ -508,6 +808,7 @@ class SessionManager:
         cwd: str | None = None,
         shell: str | None = None,
         sandbox_profile: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> Session:
         self._seq += 1
         sid = uuid.uuid4().hex[:12]
@@ -524,6 +825,8 @@ class SessionManager:
             cwd=cwd or str(Path.home()),
             shell=sh,
             sandbox_profile=sandbox_profile or "host",
+            env=env,
+            holder=self._holder_client(),
         )
         session.start()
         try:
@@ -553,6 +856,14 @@ class SessionManager:
         session.kill(timeout=timeout)
         return True
 
-    def kill_all(self, timeout: float = 3.0) -> None:
+    def kill_all(self, timeout: float = 3.0, *, keep_held: bool = True) -> None:
+        """End every terminal. Held terminals are only detached (they survive); ``keep_held=False`` ends them too."""
         for sid in list(self._sessions):
+            session = self._sessions.get(sid)
+            if keep_held and session is not None and session.durable:
+                self._sessions.pop(sid, None)
+                session.detach()
+                continue
             self.kill(sid, timeout=timeout)
+        if self.holder is not None:
+            self.holder.close()  # type: ignore[attr-defined]

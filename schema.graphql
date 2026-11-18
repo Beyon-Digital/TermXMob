@@ -360,6 +360,39 @@ type BrowserSiteEvent {
   site: BrowserSite
 }
 
+type CliSession {
+  id: String!
+  cli: String!
+  label: String
+  title: String
+  status: String!
+  status_source: String
+  status_detail: String
+  status_updated_at: Float
+  project_id: String
+  cwd: String
+  isolation: String
+  worktree: JSON
+  pty_session_id: String
+  sandbox_profile: String
+  mode: String
+  started_at: Float
+  updated_at: Float
+  ended_at: Float
+  exit_code: Int
+  ended_reason: String
+  native_session_id: String
+  resumable: Boolean
+  resumed_from: String
+  resumed_to: String
+  attention: Boolean
+}
+
+type CliSessionEvent {
+  type: String!
+  session: CliSession
+}
+
 input CommandInput {
   name: String!
   command: String!
@@ -837,6 +870,38 @@ type HostCustomAgent {
   updated_at: Float
 }
 
+type HostHeartbeat {
+  at: Float
+  age_s: Float
+  interval_s: Float!
+  file: String!
+  error: String
+}
+
+type HostHolderState {
+  mode: String!
+  requested: String!
+  reason: String
+  running: Boolean!
+  pid: Int
+  version: String
+  protocol: Int
+  sessions: Int!
+  exited_sessions: Int!
+  draining: Boolean!
+  direct_terminals: Int!
+}
+
+type HostKeepAwakeState {
+  enabled: Boolean!
+  active: Boolean!
+  supported: Boolean!
+  backend: String
+  reasons: [String!]!
+  count: Int!
+  error: String
+}
+
 type HostNotification {
   id: String!
   kind: String!
@@ -848,6 +913,41 @@ type HostNotification {
   task_id: String
   read: Boolean!
   created_at: Float!
+}
+
+type HostRecoveryState {
+  recovering_tasks: Int!
+  running_tasks: Int!
+  lost_cli_sessions: Int!
+  resumable_cli_sessions: Int!
+  live_cli_sessions: Int!
+  lost_engine_sessions: Int!
+  resumable_engine_sessions: Int!
+}
+
+type HostServiceState {
+  backend: String!
+  supported: Boolean!
+  installed: Boolean!
+  managed: Boolean!
+  state: String!
+}
+
+input HostSettingsInput {
+  keep_awake: Boolean = null
+  pty_holder: String = null
+}
+
+type HostStatus {
+  version: String!
+  pid: Int!
+  started_at: Float!
+  uptime_s: Float!
+  service: HostServiceState!
+  holder: HostHolderState!
+  recovery: HostRecoveryState!
+  keep_awake: HostKeepAwakeState!
+  heartbeat: HostHeartbeat!
 }
 
 """
@@ -962,6 +1062,7 @@ type Mutation {
   unregister_push_device(token: String!): JSON!
   mark_notifications_read(ids: [String!]!): Int!
   mark_all_notifications_read: Int!
+  update_host_settings(input: HostSettingsInput!): HostStatus!
   create_session(input: CreateSessionInput = null): SessionInfo!
   rename_session(session_id: String!, title: String!): SessionInfo!
   delete_session(session_id: String!): Ok!
@@ -1143,6 +1244,10 @@ type OrchestratorNode {
   cost_usd: Float
   created_at: Float
   updated_at: Float
+  executor: JSON
+  blocked_reason: String
+  session_id: String
+  resumable: Boolean
 }
 
 type OrchestratorRollup {
@@ -1320,6 +1425,7 @@ type Query {
   audit(limit: Int! = 100): [JSON!]!
   notifications(limit: Int! = 100, unread: Boolean! = false): [HostNotification!]!
   notification_unread_count: Int!
+  host_status: HostStatus!
   sessions: [SessionInfo!]!
   workspace: Workspace!
   preferences: Preferences!
@@ -1536,6 +1642,8 @@ type SkippedSkillFile {
 type Subscription {
   activity_events: ActivityEvent!
   browser_site_events: BrowserSiteEvent!
+  host_status_events: HostStatus!
+  cli_session_events: CliSessionEvent!
   agent_task_events(task_id: String!, after: Int! = 0): TaskEventEnvelope!
   notification_events: HostNotification!
 }

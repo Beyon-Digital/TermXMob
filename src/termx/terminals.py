@@ -66,6 +66,9 @@ class PosixTerminal:
                 env=env,
                 preexec_fn=lambda: _preexec_controlling_tty(slave),
             )
+        except BaseException:
+            os.close(master)  # a failed spawn must not leak the master (the holder lives for days)
+            raise
         finally:
             os.close(slave)
         flags = fcntl.fcntl(master, fcntl.F_GETFL)

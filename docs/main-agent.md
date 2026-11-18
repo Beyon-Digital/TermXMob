@@ -103,7 +103,7 @@ For work with dependencies the main agent records a graph of **nodes** instead o
 spawning ad-hoc children. A node is a durable `orchestrator_node` record in
 `workspace.sqlite3` with a title, prompt, role, `ask` or `agent` mode, the IDs it
 `depends_on`, its task IDs, status, attempt count, last event time and a result
-summary. Each node runs as its own top-level task through `AgentManager.create_task`,
+summary. An internal node (the default executor) runs as its own top-level task through `AgentManager.create_task`,
 so delegation depth stays 1, the sub-agent parallel and total limits do not apply, and
 every node has its own budget, approvals and isolation: a Git worktree when the main
 folder is a repository, the managed scratch folder when it is scratch, and
@@ -112,12 +112,77 @@ model route, or the provider and model set by `reassign_node`.
 
 | Tool | Approval | What it does |
 | --- | --- | --- |
-| `plan_nodes` | none | Records up to 20 nodes per call (100 per main agent). Rejects unknown dependencies, self-dependencies, duplicate keys and cycles. A replayed call ID returns the same nodes. |
-| `start_ready` | always | Starts pending nodes whose dependencies all completed. Each brief carries the dependency summaries, labelled as untrusted evidence. A failed or cancelled dependency keeps its dependents pending. |
+| `plan_nodes` | none | Records up to 20 nodes per call (100 per main agent). Rejects unknown dependencies, self-dependencies, duplicate keys, cycles and any executor outside the allowlists below. A replayed call ID returns the same nodes. |
+| `start_ready` | always | Starts pending nodes whose dependencies all completed. Each brief carries the dependency summaries, labelled as untrusted evidence. A failed or cancelled dependency keeps its dependents pending. Engine and CLI nodes make it an always-ask `delegation` decision (see below). |
 | `node_status` | none | Nodes plus a rollup. `wait_seconds` (max 120) waits for a running node to change state, which is how a turn waits without a background loop. |
-| `retry_node` | always | Reruns a failed, stalled or cancelled node, stopping a stalled one first. A node gets 2 attempts per model. |
-| `reassign_node` | always | Moves a stopped or pending node to another configured provider/model (resolved like any worker route) with a fresh attempt count. The model must differ from the current one. |
-| `cancel_node` | none | Cancels the node and, transitively, every dependent that has not completed. Completed work is kept. |
+| `retry_node` | always | Reruns a failed, stalled or cancelled node, stopping a stalled one first. A node gets 2 attempts per model. On a CLI node whose session was lost it resumes that session instead (never a second launch). |
+| `reassign_node` | always | Moves a stopped or pending **internal** node to another configured provider/model (resolved like any worker route) with a fresh attempt count. The model must differ from the current one. Engine and CLI nodes do not use a model provider and refuse it. |
+| `cancel_node` | none | Cancels the node and, transitively, every dependent that has not completed. A CLI node's session is stopped and an engine node's native session is cancelled. Completed work is kept. |
+| `review_node_changes` | none | Read-only: a bounded, redacted summary and diff of the node's isolated checkout (see Executors). |
+
+### Executors
+
+Each node carries an `executor` saying who does its work. It defaults to `{"kind":"internal"}`,
+so graphs and plans stored before executors existed behave exactly as before (a missing
+field reads as internal; nothing is rewritten).
+
+| `kind` | Fields | Runs as | Prefer it for |
+| --- | --- | --- | --- |
+| `internal` | none (use the node `mode`) | The Internal Agent, a top-level task through `AgentManager.create_task` (what nodes always did) | Small, self-contained tasks, and anything a bot should do |
+| `engine` | `engine` (an id from `list_agent_engines`), optional `mode` (`agent` or `ask`; `ask` only for `codex`/`claude`) | A protocol-engine child through `EngineCoordination.spawn`, the same path and receipts as `spawn_engine_agent`; edits go to an isolated worktree or snapshot | Structured, background coding work that should run to completion |
+| `cli` | `cli` (`claude`, `codex`, `gemini`, `aider`), optional `mode` (`default` or `read_only`; defaults to `read_only` for an `ask` node), optional `isolation` (`worktree`, the default, or `none`) | A real interactive CLI session ([docs/cli-sessions.md](cli-sessions.md)): a PTY, hooks and a status machine, visible and steerable from the terminal and from phones | The user wants the actual TUI, or a workflow specific to that CLI |
+
+Validation is a strict allowlist: unknown fields, an unknown kind, an engine the
+gateway does not list, a CLI outside the catalogue, `bypass`/`yolo` or any raw argv are
+refused at `plan_nodes`, and a node that names a bot must use `internal`.
+
+**Approval.** Starting a CLI is always-ask. `start_ready` and `retry_node` for such nodes
+run the same checks as `cli_session_start` (CLI installed, `terminal-control` and, for a
+worktree, `git-read`/`git-write` on the project) and return the same `delegation` decision
+with the same text and the `cli.session.start` capability, so Auto and remembered rules never
+answer for the owner. Engine nodes are `delegation` too. The user starting nodes from the
+board is the owner and has no approval step, as for every other board action. Engine
+children are parented to a main-agent turn, so they start only from `start_ready`/
+`retry_node` run by the main agent; started from the board they stay pending.
+
+**Settling.** A node settles from its executor's events, with a repair on every board read and
+at host start. Engine nodes settle from their task like internal ones. CLI nodes follow the
+session status:
+
+| Session | Node |
+| --- | --- |
+| `starting`, `working` | `running` (a blocked node returns to `running` when the session works again) |
+| `needs_approval` | `blocked` (`blocked_reason: needs_approval`) at once |
+| `waiting_input` | `blocked` (`waiting_input`) once the session has been at the prompt after its first 30 seconds; the first seconds are startup, not waiting |
+| `done` (clean exit, or stopped) | `completed` |
+| `failed` (non-zero exit) | `failed` |
+| `lost` and resumable | `blocked` (`lost`): `retry_node` resumes the CLI's own saved conversation |
+| `lost` and not resumable | `failed` |
+
+A blocked node tells the main agent and the user once per reason
+(`orchestrator.node_blocked`); it is waiting on a person, not stalled, and the main agent must
+not start a duplicate. A node counts against the four-running limit while its terminal is alive
+(running or blocked) and frees its slot when the session is lost. A CLI session is interactive,
+so it does not end by itself: the main agent reviews the work, then stops the session
+(`cli_session_stop`) and the node completes. A CLI node never goes `stalled` from quiet time.
+
+**Restart safety.** The session id is recorded on the node before the CLI launches. After a host
+restart a node whose session the PTY holder kept alive is matched by that id and is not launched
+again; a session that ended while the host was down settles the node; a lost session becomes a
+resumable blocked node. A launch that crashed before the session existed fails the node with a
+clear error and waits for an explicit retry. An engine launch replayed after a crash reuses its
+receipt, so it cannot create a second child. A session the owner resumed from another client is
+followed by the node.
+
+**Reviewing a node.** `review_node_changes {node_id}` returns the node's changes as untrusted data:
+file list (at most 40), up to 8 redacted diffs (6,000 characters each, 30,000 in total) and flags
+saying what was left out. The checkout comes from TermX's own records (the CLI session's worktree,
+the engine child's isolation, the internal task's worktree or scratch folder), never from the model,
+and the caller needs `agent-view` plus `git-read` on the project. It uses the same read-only review
+as the changes view (`workspace/change_review.py`), shows uncommitted changes against `HEAD` (a CLI
+that commits its own work, such as Aider, shows its branch and head but no diff), and has no apply
+path: applying or merging stays behind the existing delivery approvals. Nodes that ran read-only
+have nothing to review.
 
 **Monitoring.** Every event of a node's current task refreshes its `last_event_at`,
 not only the notable ones (the stored value is written at most every 5 seconds per
@@ -127,12 +192,15 @@ default, set with `state.node_stall_seconds` or `TaskGraph(stall_seconds=...)`. 
 main turn. Nothing is stopped automatically. A task that waits for an approval or
 a decision is not stalled, and any new event returns a stalled node to `running`.
 Failures and completions are reported the same way (`orchestrator.node_failed`,
-`orchestrator.node_completed`). A read repairs a node whose finishing event was
+`orchestrator.node_completed`), and a CLI node that needs a person adds `orchestrator.node_blocked`. A read repairs a node whose finishing event was
 missed, for example across a host restart.
 
 **Rollup.** The orchestrator snapshot includes `nodes` and `rollup`: counts per status,
 percent complete (completed over total), and summed tokens and cost across all
 attempts. Cost is `null` until some node has a priced turn.
+
+A node view also carries `executor`, `blocked_reason`, `session_id` (its CLI session or engine
+conversation) and `resumable`; `blocked` is a rollup status of its own.
 
 **User control.** The same operations are available over GraphQL. `orchestrator_board`
 (`agent-view`) returns `{nodes, rollup}`; `retry_node`, `reassign_node` and
