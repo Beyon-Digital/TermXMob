@@ -308,3 +308,68 @@ def test_provider_test_falls_back_to_one_billed_call_only_when_listing_is_unsupp
     seen.clear()
     assert asyncio.run(adapter.test(billed=True)) == "OK"
     assert [r.method for r in seen] == ["POST"]
+
+
+# -- Anthropic (SDK models.list) ----------------------------------------------------------------
+
+
+def _anthropic_sdk(seen: list[Any] | None = None, status: int = 200) -> Any:
+    import anthropic
+    import httpx2
+
+    pages = fixture("anthropic_models.json")["pages"]
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if seen is not None:
+            seen.append(request)
+        if status != 200:
+            return httpx2.Response(status, json={"type": "error", "error": {"type": "authentication_error", "message": "bad"}})
+        return httpx2.Response(200, json=pages[1] if request.url.params.get("after_id") else pages[0])
+
+    return anthropic.AsyncAnthropic(
+        api_key="sk-ant-x", base_url="https://api.anthropic.com", max_retries=0,
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    )
+
+
+def test_anthropic_discovery_reads_window_output_and_capabilities_across_pages() -> None:
+    from termx.agent.discovery import discover_anthropic
+
+    seen: list[Any] = []
+    models = asyncio.run(discover_anthropic(_anthropic_sdk(seen), now=lambda: NOW))
+    assert len(seen) == 2 and all(r.url.path == "/v1/models" for r in seen)
+    opus = models["claude-opus-5-5"]
+    assert opus["context_window"] == 1_000_000 and opus["max_output"] == 128_000
+    assert opus["capabilities"] == ["tools", "vision", "reasoning"]
+    assert opus["source"] == "anthropic" and opus["fetched_at"] == NOW
+    # The API reports no prices, and a model with no output cap stays unknown (never zero).
+    assert opus["price_in"] is None and opus["price_out"] is None
+    haiku = models["claude-haiku-5-5"]
+    assert haiku["max_output"] is None and haiku["capabilities"] == ["tools"]
+    # A retired model is not offered.
+    assert set(models) == {"claude-opus-5-5", "claude-fable-5-2", "claude-haiku-5-5"}
+
+
+def test_anthropic_discovery_failures_carry_the_status() -> None:
+    from termx.agent.discovery import discover_anthropic
+
+    with pytest.raises(ProviderError) as bad_key:
+        asyncio.run(discover_anthropic(_anthropic_sdk(status=401)))
+    assert bad_key.value.status_code == 401 and "API key" in str(bad_key.value)
+    with pytest.raises(ProviderError) as outage:
+        asyncio.run(discover_anthropic(_anthropic_sdk(status=503)))
+    assert outage.value.status_code == 503
+
+
+def test_discover_models_dispatches_on_the_anthropic_kind(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: list[tuple[str, str]] = []
+    sdk = _anthropic_sdk()
+
+    def fake_client(base_url: str, api_key: str, timeout_s: float | None = None) -> Any:
+        built.append((base_url, api_key))
+        return sdk
+
+    monkeypatch.setattr("termx.agent.providers.make_anthropic_client", fake_client)
+    provider = {"kind": "anthropic", "base_url": "https://api.anthropic.com"}
+    models = asyncio.run(discover_models(provider, "sk-ant-x", now=lambda: NOW))
+    assert built == [("https://api.anthropic.com", "sk-ant-x")] and "claude-fable-5-2" in models

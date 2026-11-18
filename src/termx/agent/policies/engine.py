@@ -25,6 +25,7 @@ from termx.agent.policies import fingerprint as fp
 from termx.agent.policies.defaults import (
     AUTONOMOUS_BLOCKED_RISKS,
     HOST_MEDIATED_CAPABILITIES,
+    HOST_MEDIATED_TOOLS,
     UNGRANTABLE_CAPABILITIES,
     intent_risk,
     shell_capabilities,
@@ -169,7 +170,9 @@ class PolicyEngine:
         missing = [
             cap
             for cap in intent.required_capabilities
-            if cap not in HOST_MEDIATED_CAPABILITIES and not _covers(envelope, cap)
+            if intent.tool not in HOST_MEDIATED_TOOLS
+            and cap not in HOST_MEDIATED_CAPABILITIES
+            and not _covers(envelope, cap)
         ]
         if missing:
             ungrantable = [c for c in missing if c in UNGRANTABLE_CAPABILITIES]

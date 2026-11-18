@@ -1,9 +1,10 @@
 """Internal engine browser schemas and execution through the same task broker."""
 import asyncio
+import hashlib
 from time import monotonic
 from termx.agent.policy import PolicyDecision
-from termx.agent.tools.registry import ToolSpec,ToolOutcome
-from termx.browser.tools import BROWSER_TOOL_SCHEMAS,BrowserToolAdapter
+from termx.agent.tools.registry import ToolSpec,ToolOutcome,decide_never
+from termx.browser.tools import BROWSER_TOOL_SCHEMAS,SITE_TOOL_SCHEMAS,BrowserToolAdapter,execute_site_tool
 
 
 def decide(call,ctx):
@@ -61,8 +62,65 @@ async def execute(call,ctx):
     result=await BrowserToolAdapter(service).execute(call.name,call.arguments,task_id=ctx.task_id,principal_id=binding['principal_id'],session_id=binding['session_id'],call_id=ctx.task_id+':'+call.call_id,authority=lambda:service.authority_valid(binding))
     return ToolOutcome(result if isinstance(result,dict) else {'tabs':result})
 
+# Saved-site tools act for the signed-in user who started the task, never through a tab grant.
+def _site_authority(service,ctx):
+    row=service.records.get('agent-task-authority',ctx.task_id)
+    if row and service.session_valid(row['principal_id'],row['session_id'],row['policy_version']):return row
+    row=service.records.get('browser-task',ctx.task_id)
+    if row and service.authority_valid(row):return row
+    raise PermissionError('This task is not acting for a signed-in user, so it cannot use saved sites')
+
+def _site_origin(ctx,call):
+    # Display only: the approval names where the site lives. A lookup failure leaves the approval generic, never open.
+    try:
+        service=ctx.manager.browser;row=_site_authority(service,ctx)
+        return service.site(str(call.arguments.get('site_id') or ''),row['principal_id'])['origin']
+    except Exception:return ''
+
+def _site_decision(call,ctx,base,*,fingerprint,display,matcher,risk,ask_each_time):
+    engine=ctx.policy_engine
+    if engine is None:return base
+    return engine.decide_tool(call,ctx,fingerprint=hashlib.sha256(fingerprint.encode()).hexdigest(),display=display,matcher=matcher,base=base,capabilities=('browser.site',),risk=risk,ask_each_time=ask_each_time)
+
+def decide_site_open(call,ctx):
+    if ctx.read_only:return PolicyDecision(False,False,'Ask mode is read-only','Opening a site requires Agent mode')
+    origin=_site_origin(ctx,call)
+    base=PolicyDecision(False,True,'Open saved site',f'Opens {origin or "a saved site"} in a new built-in tab. The tab stays under your control; the agent cannot act in it until you hand it off.')
+    return _site_decision(call,ctx,base,fingerprint='browser_site_open|'+origin,display='browser_site_open · '+(origin or 'saved site'),matcher={'origin':origin},risk='external',ask_each_time=False)
+
+def decide_site_pin(call,ctx):
+    if ctx.read_only:return PolicyDecision(False,False,'Ask mode is read-only','Changing saved sites requires Agent mode')
+    target=str(call.arguments.get('url') or call.arguments.get('site_id') or '')
+    base=PolicyDecision(True,False,'Saved-site pin','Pins or unpins a site in your saved sites')
+    return _site_decision(call,ctx,base,fingerprint='browser_site_pin|'+target,display='browser_site_pin · '+target[:80],matcher={},risk='safe',ask_each_time=False)
+
+def decide_site_note_write(call,ctx):
+    if ctx.read_only:return PolicyDecision(False,False,'Ask mode is read-only','Saving a site note requires Agent mode')
+    text=str(call.arguments.get('content') or '');origin=_site_origin(ctx,call)
+    base=PolicyDecision(False,True,'Save site note',f'Saves a note on {origin or "a saved site"}. It is read back later as untrusted data, never as instructions. Note ({len(text)} characters): {text[:2000]}')
+    digest=hashlib.sha256(text.encode()).hexdigest()
+    return _site_decision(call,ctx,base,fingerprint=f'browser_site_note_write|{call.arguments.get("site_id")}|{digest}',display='browser_site_note_write · '+(origin or 'saved site'),matcher={},risk='sensitive',ask_each_time=True)
+
+async def execute_site(call,ctx):
+    service=getattr(ctx.manager,'browser',None)
+    if not service:return ToolOutcome({'refused':True,'error':'Built-in browser unavailable'})
+    if ctx.read_only and call.name in {'browser_site_open','browser_site_pin','browser_site_note_write'}:return ToolOutcome({'ok':False,'refused':True,'error':'Ask mode cannot change saved sites'})
+    try:
+        binding=_site_authority(service,ctx)
+        result=await execute_site_tool(service,call.name,call.arguments,principal_id=binding['principal_id'],session_id=binding.get('session_id') or binding['principal_id'])
+    except KeyError:return ToolOutcome({'ok':False,'refused':True,'error':'Saved site or profile not found'})
+    except (ValueError,PermissionError) as error:return ToolOutcome({'ok':False,'refused':True,'error':str(error)[:300]})
+    return ToolOutcome(result,event={'name':call.name})
+
+_SITE_TOOLS={'browser_sites_list':('read',True,'never',decide_never),'browser_site_note_read':('read',True,'never',decide_never),
+             'browser_site_open':('external',False,'policy',decide_site_open),'browser_site_pin':('write',False,'policy',decide_site_pin),
+             'browser_site_note_write':('write',False,'always',decide_site_note_write)}
+
 def register(registry):
     for tool in BROWSER_TOOL_SCHEMAS:
         name=tool['name']
         registry.register(ToolSpec(name,tool['description'],tool['parameters'],'external' if name in {'browser_action','browser_open_tab','browser_close_tab'} else 'read',False,'never',execute,decide,expose_read_only=name not in {'browser_action','browser_open_tab','browser_close_tab'}))
     registry.register(ToolSpec('browser_wait_for_handoff','Wait for the user to hand a built-in tab to this task before starting browser work.',{'type':'object','properties':{'seconds':{'type':'integer','minimum':1,'maximum':300}},'additionalProperties':False},'read',False,'never',execute,decide,expose_read_only=False))
+    for tool in SITE_TOOL_SCHEMAS:
+        mutability,parallel,approval,decide_site=_SITE_TOOLS[tool['name']]
+        registry.register(ToolSpec(tool['name'],tool['description'],tool['parameters'],mutability,parallel,approval,execute_site,decide_site,expose_read_only=mutability=='read'))

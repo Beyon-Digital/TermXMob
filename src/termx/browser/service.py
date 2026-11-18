@@ -14,6 +14,7 @@ from typing import Callable
 from termx.auto_review import ActionEnvelope,DecisionBroker,canonical_hash,ReviewRequired
 from termx.browser.network import NetworkPolicy,EgressProxy,origin,TargetDenied
 from termx.browser.storage import Records
+from termx.browser.sites import SiteStore
 
 class BrowserService:
     """A host-owned Chromium worker with persistent isolated browser profiles.
@@ -24,6 +25,11 @@ class BrowserService:
     """
     def __init__(self,root:Path,*,review:DecisionBroker|None=None,development_origins=(),executable_path=None,session_valid:Callable[[str,str,int],bool]|None=None):
         self.records=Records(root);self.review=review or DecisionBroker(self.records)
+        self.site_store=SiteStore(self.records)
+        # Optional hook for usage history: called with one dict per counted visit (see touch_site). A wiring layer
+        # (workspace usage recorder) may assign it; BrowserService itself never depends on what listens.
+        self.on_visit:Callable[[dict],None]|None=None
+        self._site_locks:dict[str,asyncio.Lock]={}
         self.network=NetworkPolicy(development_origins);self.executable_path=executable_path
         self.session_valid=session_valid or (lambda principal,session,policy_version:True)
         self.delegation_valid=lambda binding:False
@@ -264,6 +270,66 @@ class BrowserService:
         current['title']=title;self.records.put('tab',id,current)
         history_id=secrets.token_urlsafe(12)
         self.records.put('history',history_id,{'id':history_id,'principal_id':tab['principal_id'],'profile_id':tab['profile_id'],'origin':origin(tab['url']) if tab['url'].startswith(('https://','http://')) else 'about:blank','title':title,'url':tab['url'].split('?')[0].split('#')[0],'visited_at':time()})
+        self.touch_site(current,title)
+    def touch_site(self,tab,title='',*,now=None):
+        """Count a navigation toward saved-site usage and, for unsaved origins, toward suggestions.
+
+        Called for every recorded (non-private) navigation. Query strings never reach the counters: only the origin
+        and the page title are kept. ``on_visit`` fires once per counted visit.
+        """
+        url=tab.get('url') or ''
+        if not url.startswith(('https://','http://')):return None
+        profile=self.records.get('profile',tab['profile_id'])
+        if not profile or profile.get('ephemeral'):return None # Temporary profiles leave no usage trace.
+        try:
+            site_origin=origin(url.split('?')[0].split('#')[0])
+            result=self.site_store.touch(tab['principal_id'],tab['profile_id'],tab.get('project_id') or '',site_origin,title,now=now)
+        except Exception:return None # Usage counters must never break navigation.
+        if result['counted'] and self.on_visit:
+            event={'principal_id':tab['principal_id'],'project_id':tab.get('project_id') or '','profile_id':tab['profile_id'],'site_id':result['site_id'],'saved':result['saved'],'origin':site_origin,'title':title[:200],'url':url.split('?')[0].split('#')[0],'visit_count':result['visit_count'],'at':now if now is not None else time()}
+            try:self.on_visit(event)
+            except Exception:pass
+        return result
+    def sites(self,principal,*,profile_id=None,pinned=None):return self.site_store.list(principal,profile_id=profile_id,pinned=pinned)
+    def site(self,id,principal):return self.site_store.get(id,principal)
+    def save_site(self,principal,profile_id,url,*,title='',open_mode='tab',pinned=True,project_id=None):
+        profile=self.records.get('profile',profile_id)
+        if not profile or profile['principal_id']!=principal:raise KeyError('profile not found')
+        if profile.get('ephemeral'):raise ValueError('sites cannot be saved on a temporary profile')
+        site,_=self.site_store.save(principal,profile_id,profile['project_id'] if project_id is None else project_id,url,title=title,open_mode=open_mode,pinned=pinned)
+        return site
+    def update_site(self,id,principal,**changes):return self.site_store.update(id,principal,changes)
+    def pin_site(self,id,principal,pinned=True):return self.site_store.update(id,principal,{'pinned':bool(pinned)})
+    def remove_site(self,id,principal):return self.site_store.delete(id,principal)
+    async def open_site(self,id,principal,session_id,*,claim=False):
+        """Open a saved site in its profile. The tab is human-owned: opening grants an agent no control over it.
+
+        A live tab for the site is reused. An app-mode site whose tab was closed (including by a host restart, which
+        closes every Chromium page) reopens that tab lazily at its last page on the same origin; otherwise a new tab
+        starts at the saved URL.
+        """
+        lock=self._site_locks.setdefault(id,asyncio.Lock())
+        async with lock:
+            site=self.site_store.get(id,principal)
+            profile=self.records.get('profile',site['profile_id'])
+            if not profile or profile['principal_id']!=principal:raise KeyError('profile not found')
+            previous=self.records.get('tab',site['tab_id']) if site['tab_id'] else None
+            if previous and (previous['principal_id']!=principal or previous['profile_id']!=site['profile_id']):previous=None
+            tab=None;reused=False
+            if previous:
+                page=self._pages.get(previous['id'])
+                if previous['state'] not in {'closed','crashed'} and page and not page.is_closed():tab=previous;reused=True
+                elif site['open_mode']=='app' and previous['state'] in {'closed','crashed'} and previous['url'].startswith(('http://','https://')):
+                    try:
+                        if origin(previous['url'])==site['origin']:tab=await self.recover_tab(previous['id'],principal,session_id)
+                    except ValueError:tab=None
+            if tab is None:tab=await self.create_tab(principal,session_id,site['profile_id'],site['start_url'])
+            if claim:self.claim_tab(principal,tab)
+            return {'site':self.site_store.set_tab(id,principal,tab['id']),'tab':tab,'reused':reused}
+    def site_notes(self,id,principal):return self.site_store.notes(id,principal)
+    def write_site_note(self,id,principal,content,*,author='user'):return self.site_store.add_note(id,principal,author,content)
+    def delete_site_note(self,id,principal,note_id):return self.site_store.delete_note(id,principal,note_id)
+    def suggestions(self,principal,limit=5):return self.site_store.suggestions(principal,limit=limit)
     def _closed(self,id,state='closed'):
         tab=self.records.get('tab',id)
         # A crashed renderer can subsequently emit close. Preserve recovery
@@ -788,6 +854,7 @@ class BrowserService:
         self._clear_profile_artifacts(id,remove=remove)
         return {'ok':True}
     def _clear_profile_artifacts(self,id,*,remove=False):
+            self.site_store.clear_profile(id,remove=remove)
             shutil.rmtree(self.records.root/'profiles'/id,ignore_errors=True)
             for kind in ('history','download','upload','annotation','annotation-frame','annotation-comparison','recording-step'):
                 for row in self.records.list(kind):

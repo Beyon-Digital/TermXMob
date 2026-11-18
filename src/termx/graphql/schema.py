@@ -19,6 +19,7 @@ from termx.graphql.domains.chat import ChatMutations, ChatQueries
 from termx.graphql.domains.core import CoreMutations, CoreQueries
 from termx.graphql.domains.desktop_control import DesktopControlMutations, DesktopControlQueries
 from termx.graphql.domains.files import FilesMutations, FilesQueries
+from termx.graphql.domains.host_status import HostStatusMutations, HostStatusQueries
 from termx.graphql.domains.memory import MemoryMutations, MemoryQueries
 from termx.graphql.domains.network import NetworkMutations, NetworkQueries
 from termx.graphql.domains.runbooks import RunbookMutations, RunbookQueries
@@ -34,6 +35,7 @@ class Query(
     DesktopWorkspaceQueries,
     DesktopControlQueries,
     CoreQueries,
+    HostStatusQueries,
     WorkspaceQueries,
     FilesQueries,
     NetworkQueries,
@@ -55,6 +57,7 @@ class Query(
 class Mutation(
     DesktopControlMutations,
     CoreMutations,
+    HostStatusMutations,
     WorkspaceMutations,
     FilesMutations,
     NetworkMutations,

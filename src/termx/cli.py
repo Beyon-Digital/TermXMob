@@ -396,6 +396,11 @@ async def _serve_owned(args: argparse.Namespace, instance) -> int:
 
 def main() -> None:
     augment_path()
+    if len(sys.argv) > 1 and sys.argv[1] == "pty-holder":
+        # Internal: the detached helper that owns terminal PTYs across host restarts (also `status` / `stop`).
+        from termx.pty_holder import main as holder_main
+
+        raise SystemExit(holder_main(sys.argv[2:]))
     args = build_parser().parse_args()
     if args.command == 'service':
         import json

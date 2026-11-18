@@ -38,11 +38,12 @@ def test_private_service_install_renders_safe_user_supervisor_without_secret_arg
     assert config['host']=='127.0.0.1'
     if os.name!='nt':assert host.config_path.stat().st_mode & 0o777 == 0o600
     if platform=='linux':
-        assert 'RestartPreventExitStatus=73 79' in content and 'KillMode=control-group' in content
+        assert 'RestartPreventExitStatus=73 79' in content and 'KillMode=process' in content and 'control-group' not in content
         assert calls[-1][2]=='enable'
     elif platform=='darwin':
         parsed=plistlib.loads(content.encode())
         assert parsed['KeepAlive']=={'SuccessfulExit':False} and parsed['ProgramArguments'][0].endswith('python with spaces')
+        assert parsed['AbandonProcessGroup'] is True
         assert not calls  # install never starts a launchd host behind the app.
     else:
         parsed=ET.fromstring(content);ns={'t':'http://schemas.microsoft.com/windows/2004/02/mit/task'}
@@ -105,3 +106,34 @@ def test_native_start_options_accepted_but_worker_has_no_parent_watchdog():
     assert args.command=='service' and args.service_action=='start' and args.port==8791
     worker=build_parser().parse_args(['--service-worker','--config-dir','profile'])
     assert worker.service_worker and worker.parent_pid is None
+
+
+def test_systemd_unit_leaves_the_detached_pty_holder_alive_across_a_stop_or_restart(tmp_path,monkeypatch):
+    """A stop or restart must signal only the host: the PTY holder (terminals, CLI sessions) is not the main process."""
+    host=controller(tmp_path,monkeypatch,'linux')
+    host.install()
+    unit=host.definition_path.read_text()
+    service=unit.split('[Service]')[1].split('[Install]')[0]
+    lines=[line for line in service.splitlines() if line and not line.startswith('#')]
+    assert 'KillMode=process' in lines
+    assert not any(line.startswith('KillMode=') and line!='KillMode=process' for line in lines)
+    assert not any(line.startswith(('Delegate=','ExecStop=','ExecStopPost=')) for line in lines), 'nothing may reap the cgroup on stop'
+    assert 'Restart=on-failure' in lines and 'TimeoutStopSec=30' in lines
+
+
+def test_launchd_job_abandons_its_process_group_so_the_holder_survives_the_host(tmp_path,monkeypatch):
+    host=controller(tmp_path,monkeypatch,'darwin')
+    host.install()
+    parsed=plistlib.loads(host.definition_path.read_bytes())
+    assert parsed['AbandonProcessGroup'] is True
+    assert parsed['KeepAlive']=={'SuccessfulExit':False} and parsed['RunAtLoad'] is True
+
+
+def test_describe_reads_files_only_and_never_probes_the_running_host(tmp_path,monkeypatch):
+    calls=[]
+    host=controller(tmp_path,monkeypatch,'linux',lambda *a,**kw:calls.append(a) or SimpleNamespace(returncode=0,stdout='',stderr=''))
+    assert host.describe()['installed'] is False and host.describe()['backend']=='systemd-user'
+    host.install(port=9123)
+    calls.clear()
+    described=host.describe()
+    assert described['installed'] and described['definition'] and described['port']==9123 and not calls

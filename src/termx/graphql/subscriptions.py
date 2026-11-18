@@ -18,8 +18,17 @@ from termx.graphql.context import TermxContext
 from termx.graphql.errors import fail, to_graphql_error
 from termx.graphql import types as T
 from termx.workspace.public_events import context_task_events
+from termx.cli_sessions.gql import CliSessionEvent
+from termx.graphql.domains.host_status import HostStatus
+from termx.cli_sessions.status import ENDED as ENDED_STATUSES
+
+CLI_POLL_SECONDS = 1.0
+HOST_STATUS_POLL_SECONDS = 2.0
+HOST_STATUS_KEEPALIVE_SECONDS = 30.0
 
 Ctx = Info[TermxContext, None]
+
+BROWSER_SITE_POLL_S = 1.5
 
 
 @strawberry.type
@@ -45,6 +54,88 @@ class Subscription:
                 yield T.ActivityEvent.wrap({"type": "activity.remove", "id": item_id})
             last = current
             await asyncio.sleep(2.0)
+
+    @strawberry.subscription
+    async def browser_site_events(self, info: Ctx) -> AsyncGenerator[T.BrowserSiteEvent, None]:
+        """Saved-site changes for the caller only: a snapshot of upserts, then poll-and-diff of upserts, visits, removals."""
+        ctx = info.context
+        state = ctx.state
+
+        def principal() -> str:
+            try:
+                ctx.require('desktop-view')
+                state.authorization.require(ctx.secret, 'desktop-view')
+            except HTTPException as exc:
+                raise to_graphql_error(exc) from exc
+            from termx.browser.router import principal_for
+
+            return principal_for(state, ctx.secret)
+
+        owner = principal()
+        from termx.browser.sites import diff_sites
+
+        last: dict[str, dict] = {}
+        while True:
+            # Authority is rechecked every cycle: a revoked or narrowed token stops receiving sites.
+            if principal() != owner:
+                fail(403, "browser principal changed")
+            current = {site["id"]: site for site in state.browser.sites(owner)}
+            for event in diff_sites(last, current):
+                yield T.BrowserSiteEvent.wrap(event)
+            last = current
+            await asyncio.sleep(BROWSER_SITE_POLL_S)
+
+    @strawberry.subscription
+    async def host_status_events(self, info: Ctx) -> AsyncGenerator[HostStatus, None]:
+        """The host's health: one snapshot on connect, then one whenever something other than uptime changes
+        (and every 30 s so uptime and the heartbeat age stay fresh). Scope re-checked on every poll."""
+        from termx.graphql.domains.host_status import host_status_service
+        from termx.host_status import stable_view
+
+        ctx = info.context
+        ctx.require_host("machine-view")
+        service = host_status_service(ctx)
+        last_view: dict | None = None
+        last_sent = 0.0
+        while True:
+            ctx.require_host("machine-view")  # authority can change while the socket is open
+            snapshot = await asyncio.to_thread(service.snapshot)
+            view = stable_view(snapshot)
+            now = asyncio.get_running_loop().time()
+            if view != last_view or now - last_sent >= HOST_STATUS_KEEPALIVE_SECONDS:
+                last_view, last_sent = view, now
+                yield HostStatus.wrap(snapshot)
+            await asyncio.sleep(HOST_STATUS_POLL_SECONDS)
+
+    @strawberry.subscription
+    async def cli_session_events(self, info: Ctx) -> AsyncGenerator[CliSessionEvent, None]:
+        """Poll-and-diff of the caller's CLI sessions: created / status / exited (see docs/cli-sessions.md)."""
+        from termx.cli_sessions.http import owner_for, visible
+
+        ctx = info.context
+        ctx.require("terminal-view")
+        state = ctx.state
+        service = getattr(state, "cli_sessions", None)
+        if service is None:
+            fail(503, "CLI sessions are unavailable")
+        last: dict[str, tuple] = {}
+        while True:
+            ctx.require("terminal-view")  # authority can change while the socket is open
+            owner = owner_for(state, ctx.secret)
+            current = {row["id"]: row for row in service.rows(owner) if visible(state, ctx.secret, row)}
+            for session_id, row in current.items():
+                key = (row.get("status"), row.get("status_source"), row.get("ended_at"))
+                previous = last.get(session_id)
+                public = service.public(row)
+                if previous is None:
+                    yield CliSessionEvent.wrap({"type": "cli.session.created", "session": public})
+                if row.get("status") in ENDED_STATUSES:
+                    if previous is None or previous[0] not in ENDED_STATUSES:
+                        yield CliSessionEvent.wrap({"type": "cli.session.exited", "session": public})
+                elif previous is not None and previous != key:
+                    yield CliSessionEvent.wrap({"type": "cli.session.status", "session": public})
+            last = {session_id: (row.get("status"), row.get("status_source"), row.get("ended_at")) for session_id, row in current.items()}
+            await asyncio.sleep(CLI_POLL_SECONDS)
 
     @strawberry.subscription
     async def agent_task_events(

@@ -89,7 +89,9 @@ class HostService:
             return ('[Unit]\nDescription=Termx background host\nAfter=network.target\n\n[Service]\nType=simple\n'
                 'ExecStart=' + ' '.join(self._unit_quote(arg) for arg in arguments) + '\n' + env +
                 'WorkingDirectory=' + self._unit_quote(settings['working_directory']) + '\n'
-                'Restart=on-failure\nRestartSec=3\nRestartPreventExitStatus=73 79\nKillMode=control-group\n'
+                # KillMode=process: stopping or restarting the host signals only the host itself, never the detached PTY
+                # holder (which keeps terminals and CLI sessions alive across a restart) nor other processes in the cgroup.
+                'Restart=on-failure\nRestartSec=3\nRestartPreventExitStatus=73 79\nKillMode=process\n'
                 'TimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
         if self.backend == 'launchd-user':
             env = {'TERMX_CONFIG_DIR': str(self.root)}
@@ -97,6 +99,9 @@ class HostService:
             return plistlib.dumps({'Label': self.name, 'ProgramArguments': arguments, 'EnvironmentVariables': env,
                 'WorkingDirectory': settings['working_directory'], 'RunAtLoad': True,
                 'KeepAlive': {'SuccessfulExit': False}, 'ThrottleInterval': 3,
+                # launchd must not kill the rest of the job's process group when the host exits: the detached PTY
+                # holder keeps terminals and CLI sessions alive across restarts.
+                'AbandonProcessGroup': True,
                 'StandardOutPath': str(self.root / 'host-service.log'),
                 'StandardErrorPath': str(self.root / 'host-service-error.log')}).decode()
         if self.backend == 'windows-task':
@@ -216,6 +221,15 @@ class HostService:
         self.config_path.unlink(missing_ok=True)
         if self.backend == 'systemd-user': self._invoke('systemctl','--user','daemon-reload')
         return self.status()
+
+    def describe(self):
+        """What is installed, read from files only (safe to call from inside the running host, unlike ``status``)."""
+        try:
+            settings=self._settings()
+        except (OSError,ValueError,PermissionError):
+            settings=None
+        return {'backend':self.backend,'supported':self.backend!='unsupported','installed':settings is not None,
+            'definition':self.definition_path.is_file(),'port':settings.get('port') if settings else None}
 
     def status(self):
         result={'backend':self.backend,'supported':self.backend!='unsupported','installed':self.config_path.is_file(),
