@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-redock-cancel"
+description = "Enables the workspace_redock_cancel command without any pre-configured scope."
+commands.allow = ["workspace_redock_cancel"]
+
+[[permission]]
+identifier = "deny-workspace-redock-cancel"
+description = "Denies the workspace_redock_cancel command without any pre-configured scope."
+commands.deny = ["workspace_redock_cancel"]
