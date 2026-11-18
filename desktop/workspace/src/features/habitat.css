@@ -1,3 +1,4 @@
+@layer legacy {
 .companion-habitat {
   position: fixed;
   bottom: 40px;
@@ -188,4 +189,5 @@
     left: 12px;
     bottom: 42px;
   }
+}
 }

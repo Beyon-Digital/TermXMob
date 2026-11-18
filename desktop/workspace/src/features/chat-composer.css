@@ -1,3 +1,4 @@
+@layer legacy {
 /* Focused chat controls. All colors follow the workspace's system-aware theme. */
 .chat-region .chat-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:6px 24px;flex-shrink:0}
 .chat-toolbar .chat-engine-menu{min-width:0;max-width:min(72%,320px);height:36px;border-radius:12px;padding:0 10px;font-size:14px;font-weight:600;gap:8px}
@@ -129,7 +130,7 @@
 .session-extension small{font-size:11px;line-height:1.5;font-weight:400}
 .session-settings-pane details{font-size:12px;color:var(--secondary);line-height:1.6}
 .session-settings-pane details summary{cursor:pointer;color:var(--foreground);padding:8px 0}
-.runtime-location{font-family:'Geist Mono Variable',monospace;overflow-wrap:anywhere;padding:6px 0}
+.runtime-location{font-family:var(--font-mono);overflow-wrap:anywhere;padding:6px 0}
 .conversation-settings-link{display:flex;align-items:center;gap:12px;padding:16px 2px 2px;border-top:1px solid var(--border);margin-top:18px;text-align:left;flex-shrink:0;color:var(--secondary)}
 .conversation-settings-link>span{display:flex;flex-direction:column;gap:4px;flex:1;color:var(--foreground);font-size:12px}
 .conversation-settings-link small{font-size:11px;color:var(--secondary)}
@@ -242,4 +243,5 @@ html[data-app-workspace=agent] .mode-auto-note{margin:4px 0 0;font-size:12px;lin
  .composer-mode-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  /* A running task adds Queue and the actions menu to row one. The model then moves to row two so Send keeps its place. */
  .chat-region.chat-region .composer-container .composer-controls:has(>.composer-queue,>.composer-running-actions)>.composer-model-chip.session-model-chip{order:12;flex:1 1 56px;max-width:176px;min-width:0}
+}
 }

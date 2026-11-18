@@ -1,3 +1,4 @@
+@layer legacy {
 /* Tabs, popover and menu share the neutral overlay surface: tokens only, border plus overlay shadow, no blur. */
 .ui-tabs-list{display:flex;align-items:stretch;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .ui-tabs-list::-webkit-scrollbar{display:none}
@@ -23,3 +24,4 @@
 @keyframes ui-overlay-in{from{opacity:0}to{opacity:1}}
 @media(pointer:coarse){.ui-tabs-trigger{height:44px}.ui-menu-item{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.ui-popover,.ui-menu{animation:none;transition:none}}
+}

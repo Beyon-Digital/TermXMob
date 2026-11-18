@@ -1,3 +1,4 @@
+@layer legacy {
 /* Connection repair is inline, with details revealed only when requested. */
 .workspace-shell[data-workspace=agent] .chat-connection-setup{padding:0 0 12px;margin:0 0 4px;text-align:left;min-height:0;flex-shrink:0}
 .workspace-shell[data-workspace=agent] .chat-connection-summary{display:flex;align-items:center;gap:12px}
@@ -29,3 +30,4 @@
 @media(min-width:768px) and (pointer:fine){.workspace-shell[data-workspace=agent] .chat-connection-summary>.button{min-height:32px;height:32px}}
 @media(pointer:coarse){.workspace-shell[data-workspace=agent] .chat-connection-setup :is(button,select){min-height:44px;height:44px}}
 @media(prefers-reduced-motion:reduce){.workspace-shell[data-workspace=agent] .chat-connection-toggle>svg{transition:none}}
+}

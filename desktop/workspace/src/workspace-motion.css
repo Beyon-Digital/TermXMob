@@ -1,5 +1,5 @@
+@layer legacy {
 /* Short, shared state transitions. No animation communicates task completion. */
-:root{--motion-fast:140ms;--motion-standard:180ms;--motion-exit:120ms;--motion-ease:cubic-bezier(.2,.8,.2,1)}
 html:is([data-app-workspace=agent],[data-app-workspace=studio]) :is(button,a,summary,input,select,textarea){transition-property:background-color,border-color,color,opacity,box-shadow;transition-duration:var(--motion-fast);transition-timing-function:var(--motion-ease)}
 @media(hover:hover) and (pointer:fine){
  html:is([data-app-workspace=agent],[data-app-workspace=studio]) .button:active:not(:disabled){opacity:.78}
@@ -36,4 +36,5 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) :is(.workspace-c
 @media(prefers-reduced-motion:reduce){
  html:is([data-app-workspace=agent],[data-app-workspace=studio]) *,html:is([data-app-workspace=agent],[data-app-workspace=studio]) *::before,html:is([data-app-workspace=agent],[data-app-workspace=studio]) *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
  .ui-disclosure-content,.dialog-content,.dialog-overlay{animation:none!important;transition:none!important}
+}
 }

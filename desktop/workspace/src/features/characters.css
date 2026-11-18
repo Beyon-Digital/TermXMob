@@ -1,3 +1,4 @@
+@layer legacy {
 .characters-page {
   box-sizing: border-box;
   display: grid;
@@ -402,4 +403,5 @@
   .characters-page {
     padding: 16px;
   }
+}
 }

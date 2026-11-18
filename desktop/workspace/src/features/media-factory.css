@@ -1,3 +1,4 @@
+@layer legacy {
 .studio-factory { width: 100%; max-width: 824px; height: 100%; min-height: 0; margin: 0 auto; padding: 48px 48px 64px; overflow: auto; color: var(--text, var(--foreground)); background: var(--bg, var(--background)); }
 .studio-factory > header { margin-bottom: 40px; }
 .studio-factory .studio-eyebrow { color: var(--text-3, var(--secondary)); font-size: 12px; line-height: 18px; text-transform: none; letter-spacing: 0; }
@@ -51,3 +52,4 @@
   .factory-batch-review .factory-review-summary { grid-template-columns: minmax(0, 1fr); }
 }
 @media (pointer: coarse) { .studio-factory .button, .factory-review-actions .button { min-height: 44px; } }
+}

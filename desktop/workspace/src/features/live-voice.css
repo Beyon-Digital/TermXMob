@@ -1,3 +1,4 @@
+@layer legacy {
 /* Live voice panel, docked above the message box. Quiet text and buttons; the level meter is the only moving part. */
 .live-voice-panel{display:flex;flex-direction:column;gap:8px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:13px}
 .live-voice-line{display:flex;align-items:center;gap:10px;min-width:0}
@@ -36,3 +37,4 @@
 .live-voice-panel:not(.is-live){min-height:0;overflow:hidden;max-height:min(45dvh,300px)}
 .live-voice-panel:not(.is-live)>:not(.live-voice-actions){min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .live-voice-panel:not(.is-live)>.live-voice-actions{flex:none}
+}

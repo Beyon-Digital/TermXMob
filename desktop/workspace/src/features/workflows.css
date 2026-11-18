@@ -1,3 +1,4 @@
+@layer legacy {
 .workflows-workspace { min-height:0; }
 .workflows-workspace[hidden] { display:none; }
 .workflow-library-tools { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,192px) 40px; align-items:center; gap:12px; margin-bottom:24px; }
@@ -104,3 +105,4 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) .dialog-content:
 
 .workflow-input-dialog .workflow-limit-toggle>input { accent-color:var(--accent); }
 @media(pointer:coarse) { .workflow-input-dialog .workflow-limit-toggle { min-height:44px; } }
+}

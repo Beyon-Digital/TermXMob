@@ -1,3 +1,4 @@
+@layer legacy {
 /* Settings categories. Colours come from the theme tokens only. */
 .managers{display:grid;height:100%;min-height:0;background:var(--background);color:var(--foreground)}
 .managers.managers-embedded{display:block;min-height:100%;height:auto}
@@ -184,4 +185,5 @@ html[data-app-workspace="agent"] .model-routing .settings-row-control .select { 
 html[data-app-workspace="agent"] .provider-limits :is(summary, input):focus-visible {
   outline: var(--control-focus-ring, 2px solid var(--accent));
   outline-offset: var(--control-focus-offset, -2px);
+}
 }

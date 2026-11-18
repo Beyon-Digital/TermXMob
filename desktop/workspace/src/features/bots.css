@@ -1,3 +1,4 @@
+@layer legacy {
 /* Bots settings. Colours and spacing come from the theme tokens only. */
 .bot-toolbar{display:flex;justify-content:flex-end;margin-bottom:12px}
 .bot-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
@@ -102,3 +103,4 @@
 
 @media (max-width:700px){.bot-row{flex-direction:column;align-items:flex-start}.bot-row-meta{justify-content:flex-start}}
 @media (prefers-reduced-motion:reduce){.bot-row,.bot-tab{transition:none}}
+}

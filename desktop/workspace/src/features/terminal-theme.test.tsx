@@ -10,7 +10,7 @@ it('updates the existing terminal appearance without resetting it or replacing i
  vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});
  const root=document.documentElement;root.style.setProperty('--background','#151716');root.style.setProperty('--foreground','#f0f3ed');root.style.setProperty('--accent','#92d4a3');root.dataset.theme='dark';
  render(<TerminalPanel project={null} onError={vi.fn()}/>);
- const instance=mock.instances[0];expect(instance.options.fontFamily).toContain('Geist Mono');expect(instance.options.theme.background).toBe('#151716');
+ const instance=mock.instances[0];expect(instance.options.fontFamily).toContain('JetBrains Mono');expect(instance.options.theme.background).toBe('#151716');
  root.style.setProperty('--background','#fafaf9');root.style.setProperty('--foreground','#191f1c');root.style.setProperty('--accent','#116c46');root.dataset.theme='light';
  await waitFor(()=>expect(instance.options.theme).toEqual({background:'#fafaf9',foreground:'#191f1c',cursor:'#116c46'}));
  expect(mock.instances).toHaveLength(1);expect(instance.reset).not.toHaveBeenCalled();expect(instance.dispose).not.toHaveBeenCalled();

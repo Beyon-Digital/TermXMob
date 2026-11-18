@@ -1,3 +1,4 @@
+@layer legacy {
 .workspace-command-menu{position:fixed;z-index:60;width:244px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;padding:5px;background:var(--surface);color:var(--foreground);border:1px solid var(--border);border-radius:7px;box-shadow:0 8px 28px #0004;font-size:12px}
 .workspace-command-menu>button{display:flex;justify-content:flex-start;align-items:center;gap:10px;min-height:29px;width:100%;text-align:left;padding:5px 9px;border-radius:4px;font-size:12px}
 .workspace-command-menu>button:hover{background:var(--muted)}
@@ -20,3 +21,4 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) .workspace-comma
 @keyframes workspace-menu-enter{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 @keyframes workspace-menu-exit{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-4px)}}
 @media(prefers-reduced-motion:reduce){.workspace-command-menu{animation:none!important}}
+}

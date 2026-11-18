@@ -1,3 +1,4 @@
+@layer legacy {
 .studio-subjects { grid-column: 1 / -1; min-width: 0; width: 100%; }
 .studio-subjects .subjects-trigger { display: flex; gap: 7px; width: 100%; justify-content: flex-start; padding: 8px 0; color: var(--secondary); font-size: 11px; }
 .subjects-chevron { margin-left: auto; transition: transform 150ms ease; }
@@ -44,3 +45,4 @@
 @media (prefers-reduced-motion: reduce) { .subjects-chevron { transition: none; } .subjects-spinner { animation: none; } }
 
 .studio-subjects .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+}

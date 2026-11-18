@@ -1,3 +1,4 @@
+@layer legacy {
 /* The borderless card and blue–purple effort rail follow the supplied reference. */
 .session-model-popover{--effort-blue:#72a9f9;--effort-purple:#ad7fe7;--effort-label:var(--effort-purple);--effort-thumb:#fff;position:fixed;z-index:60;width:256px;max-width:calc(100vw - 32px);padding:12px;border:0;border-radius:16px;background:var(--surface);color:var(--text,var(--foreground));box-shadow:var(--shadow-overlay);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;transform-origin:bottom right}
 .session-model-chip{--effort-label:#ad7fe7}
@@ -60,3 +61,4 @@ html .session-model-popover.session-model-popover[data-input-method=pointer] :fo
 @keyframes effort-label-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(pointer:coarse){.session-model-popover .effort-popover-heading{grid-template-columns:44px minmax(0,1fr) 44px;grid-template-rows:20px 44px;height:64px}.session-model-popover.session-model-popover :is(.effort-model-choice,.effort-reset,.model-menu-back,.model-account-choice,.model-favorite,.effort-connections){height:44px;min-height:44px}.session-model-popover.session-model-popover :is(.effort-reset,.model-menu-back,.model-favorite){width:44px}.session-model-popover .effort-range,.session-model-popover .effort-slider{height:44px}.session-model-popover .effort-track{top:10px;bottom:10px}.session-model-popover .effort-thumb{top:8px}.session-model-popover .model-menu-heading{height:44px}.session-model-popover .model-menu-option{min-height:44px;padding-block:8px}}
 @media(prefers-reduced-motion:reduce){.session-model-popover,.session-model-popover *{animation:none!important;transition:none!important}}
+}

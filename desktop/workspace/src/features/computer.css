@@ -1,3 +1,4 @@
+@layer legacy {
 .computer-surface{overflow:auto}
 .computer-surface header{height:auto;min-height:48px;flex-wrap:wrap;flex-shrink:0}
 .computer-surface footer{flex-wrap:wrap;flex-shrink:0}
@@ -14,3 +15,4 @@
 .computer-skill-head small{color:var(--secondary);font-size:12px}
 .computer-skill-apps{display:flex;gap:6px;flex-wrap:wrap}
 .computer-skill-apps code{padding:2px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;overflow-wrap:anywhere}
+}

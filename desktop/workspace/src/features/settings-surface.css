@@ -1,3 +1,4 @@
+@layer legacy {
 .dialog-content.settings-surface{
  --settings-rail:224px;width:min(1060px,calc(100vw - 64px));max-width:none;
  height:min(820px,calc(100dvh - 64px));max-height:calc(100dvh - 64px);padding:0;
@@ -189,4 +190,5 @@ html[data-app-workspace="agent"] .settings-surface > .dialog-close { top: 24px; 
 }
 @media (pointer: coarse) {
   html[data-app-workspace="agent"] :is(.settings-categories a, .settings-scope select) { min-height: 44px; }
+}
 }

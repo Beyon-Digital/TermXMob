@@ -1,3 +1,4 @@
+@layer legacy {
 /* The page stays primary; routine tools are revealed deliberately. */
 .compact-browser.browser-workspace{container-type:inline-size;overflow:hidden;min-height:0}
 .compact-browser .browser-tabstrip{gap:3px;min-height:33px;padding:2px 5px;overflow:hidden;border-bottom:1px solid var(--border);background:var(--sidebar)}
@@ -45,3 +46,4 @@
 .compact-browser .browser-empty h2{font-size:20px}
 @container(max-width:720px){.compact-browser .browser-main{flex-direction:column}.compact-browser .browser-activity{width:100%;max-height:45%;flex:0 1 auto;border-left:0;border-top:1px solid var(--border);min-height:80px}.compact-browser .browser-profile-label{display:none}.compact-browser .browser-control>span:first-of-type{min-width:100px}.compact-browser .browser-control>span:last-of-type:not(:first-of-type){display:none}}
 @container(max-width:420px){.compact-browser .browser-control{gap:4px;padding:4px 6px}.compact-browser .browser-control>.button{font-size:11px;padding-inline:5px}.compact-browser .browser-control>span:first-of-type{font-size:11px}.compact-browser .browser-address{padding-inline:4px}.compact-browser .browser-empty{padding:20px}.compact-browser .browser-tabs>.button{max-width:140px}}
+}

@@ -1,3 +1,4 @@
+@layer legacy {
 .voice-controls {
   margin: 8px 0;
   font-size: 12px;
@@ -73,4 +74,5 @@
 }
 .voice-controls input[type='file'] {
   font-size: 12px;
+}
 }

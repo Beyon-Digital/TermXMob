@@ -1,3 +1,4 @@
+@layer legacy {
 /* Compact chrome and neutral surfaces keep the current task dominant. */
 .workspace-navigation{display:flex;flex:none;position:relative;min-height:0;z-index:15;background:var(--sidebar)}
 .workspace-activity-rail{width:44px;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 3px;border-right:1px solid var(--border);color:var(--secondary);background:var(--sidebar);z-index:22}
@@ -222,3 +223,4 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) .workspace-comma
 .workspace-shell[data-workspace=data] .workspace-navigation:not(.navigation-floating)>.sidebar{min-width:260px;max-width:260px}
 
 .workspace-data-host{display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}.workspace-data-host[hidden]{display:none!important}
+}

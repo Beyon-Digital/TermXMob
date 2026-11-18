@@ -4,8 +4,10 @@
 import './lib/random-uuid';
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import '@fontsource-variable/geist';
-import '@fontsource-variable/geist-mono';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/jetbrains-mono';
+import './styles/tokens.css';
+import './styles/legacy-aliases.css';
 import './styles.css';
 import './workspace-motion.css';
 import './workspace-shell.css';
@@ -13,7 +15,9 @@ import './agent-theme.css';
 import DataStudio from './features/data/DataStudio';
 
 const params = new URLSearchParams(location.search);
-document.documentElement.dataset.theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+const harnessTheme = params.get('theme') === 'dark' ? 'dark' : 'light';
+document.documentElement.dataset.theme = harnessTheme;
+document.documentElement.classList.toggle('dark', harnessTheme === 'dark');
 const role = params.get('role') || 'owner';
 const slow = Number(params.get('slow') || 0);
 

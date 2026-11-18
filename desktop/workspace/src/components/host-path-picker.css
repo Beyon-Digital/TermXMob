@@ -1,3 +1,4 @@
+@layer legacy {
 .host-path-picker{width:640px;min-width:0}
 .host-path-picker .host-path-toolbar{display:flex;align-items:center;gap:4px;min-width:0;margin:16px 0 12px}
 .host-path-picker .host-path-toolbar>.button{flex:none;margin:0}
@@ -45,3 +46,4 @@ html[data-app-workspace=agent] .dialog-content.host-path-picker{border:0}
 .host-path-filter>.host-path-hidden{flex-direction:row;justify-content:flex-start;font-weight:400}
 .host-path-picker .host-path-breadcrumbs .button[aria-current]{opacity:1;color:var(--foreground)}
 @media(pointer:coarse),(max-width:640px){.host-path-picker .button,.host-path-picker .dialog-close,.host-path-field .button,.context-file-choices .button{min-height:44px}.host-path-picker .button-icon,.host-path-picker .dialog-close,.dialog-content:has(.host-path-field) .dialog-close{width:44px;height:44px}.host-path-hidden{min-height:44px}}
+}

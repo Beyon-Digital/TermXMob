@@ -1,3 +1,4 @@
+@layer legacy {
 .form-field{display:grid;gap:6px;min-width:0}
 .form-field .form-field-label{display:block;margin:0;gap:0;font-size:13px;font-weight:500;color:var(--foreground)}
 .form-field-hint{margin:0;font-size:12px;line-height:1.5;color:var(--secondary)}
@@ -16,3 +17,4 @@
 .settings-row-description{margin:0;font-size:12px;line-height:1.5;color:var(--secondary)}
 .settings-row-control{display:flex;align-items:center;gap:8px;flex-shrink:0;max-width:100%}
 @media (max-width:700px){.settings-row{flex-direction:column;align-items:stretch}.settings-row-control{flex-shrink:1}}
+}

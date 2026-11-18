@@ -1,3 +1,4 @@
+@layer legacy {
 /* Describe-to-draft. Tokens only; spacing from the 4/8/12/16/24/32 scale. */
 .dialog-content.describe-dialog { width: 640px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface); box-shadow: var(--shadow-overlay); }
 .describe-dialog h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
@@ -46,4 +47,5 @@
 .authoring-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .describe-dialog .spin { animation: none; }
+}
 }

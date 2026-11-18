@@ -1,3 +1,4 @@
+@layer legacy {
 .session-checkout-context{min-width:0;margin:0 0 8px;color:var(--secondary);font-size:12px;line-height:16px}
 .session-checkout-summary{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
 .session-checkout-context .session-checkout-trigger.button{min-height:32px;height:auto;max-width:100%;padding:4px 8px;gap:8px;border:0;border-radius:8px;background:transparent;color:var(--secondary);font-size:12px;line-height:16px;font-weight:400}
@@ -19,3 +20,4 @@
 @container (max-width:480px){.session-checkout-trigger>code{max-width:14ch}.session-checkout-details dl>div{grid-template-columns:minmax(0,1fr);gap:4px}}
 @media(pointer:coarse){.session-checkout-context .session-checkout-trigger.button{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.session-checkout-chevron{transition:none}}
+}

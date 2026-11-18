@@ -1,3 +1,4 @@
+@layer legacy {
 .studio-project-heading-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .studio-project-heading-actions .studio-project-heading{margin:0}
 .studio-project-heading-actions>.button{min-width:40px;min-height:40px}
@@ -40,3 +41,4 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) .studio-project-
 html[data-app-workspace=studio] .studio-project-navigation .studio-managed-project{font-size:14px;line-height:20px}
 
 @media(pointer:coarse){html[data-app-workspace=studio] :is(.studio-project-dialog,.studio-project-switch-dialog) .dialog-close{min-width:var(--agent-touch-height,44px);min-height:var(--agent-touch-height,44px)}}
+}
