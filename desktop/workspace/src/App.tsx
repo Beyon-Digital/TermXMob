@@ -8,6 +8,8 @@ import {
   workspaceRoute,
 } from './shell/routes';
 import AuthGate, {useAuth} from './shell/AuthGate';
+import {useShellNavigation, type ShellNavigation} from './shell/navigation-state';
+import WorkspaceDataProvider, {useWorkspaceData} from './shell/WorkspaceDataProvider';
 import {ErrorProvider, useErrorMessage, useReport} from './shell/errors';
 export {SignIn} from './shell/SignIn';
 import {useStudioProjects} from './lib/studio-projects';
@@ -145,7 +147,6 @@ import {
   type CommandInvocation,
 } from './shell/commands';
 import {useShortcuts} from './shell/use-shortcuts';
-import {useUpdateEffect} from './shell/use-update-effect';
 import {
   layouts,
   validateDockMap,
@@ -263,32 +264,56 @@ export default function App() {
 }
 
 function Shell() {
-  const {auth, authEpoch, authNow, fence, locked, lockedNow, beginLock, openHostStop, onUnlocked} = useAuth();
+  const navigation = useShellNavigation();
+  return (
+    <WorkspaceDataProvider workspace={navigation.workspace} manager={navigation.manager}>
+      <ShellBody navigation={navigation} />
+    </WorkspaceDataProvider>
+  );
+}
+
+function ShellBody({navigation}: {navigation: ShellNavigation}) {
+  const {auth, authEpoch, authNow, fence, locked, lockedNow, beginLock, openHostStop} = useAuth();
   const report = useReport();
   const {error, clearError} = useErrorMessage();
-  const [projects, setProjects] = useState<Project[]>([]),
-    [sessions, setSessions] = useState<Session[]>([]),
-    [selected, setSelected] = useState(''),
-    [projectId, setProjectId] = useState(''),
-    [engines, setEngines] = useState<Engine[]>([]),
-    [providers, setProviders] = useState<Provider[]>([]),
-    [theme, setTheme] = useTheme(),
-    [manager, setManagerState] = useState(() =>
-      ['media', 'data'].includes(workspaceRoute().manager) ? '' : workspaceRoute().manager,
-    ),
+  const {workspace, setWorkspaceState, manager, setManagerState, workspaceNow, managerNow} = navigation;
+  const {
+    projects,
+    sessions,
+    engines,
+    providers,
+    sessionsState,
+    catalogState,
+    configurationState,
+    selected,
+    setSelected,
+    selection,
+    projectId,
+    setProjectId,
+    session,
+    setSession,
+    sessionCache,
+    archived,
+    setArchived,
+    workspaceActive,
+    load,
+    refresh,
+    projectPins,
+    pinsReady,
+    pinBusy,
+    pinProject,
+  } = useWorkspaceData();
+  const [theme, setTheme] = useTheme(),
     [query, setQuery] = useState(''),
     [newOpen, setNewOpen] = useState(false),
     [addProjectOpen, setAddProjectOpen] = useState(false),
     [folder, setFolder] = useState(''),
-    [archived, setArchived] = useState(false),
     [palette, setPalette] = useState(false),
     [incoming, setIncoming] = useState<IncomingContext | null>(null),
     [online, setOnline] = useState(navigator.onLine),
     [registering, setRegistering] = useState(false),
-    [visited, setVisited] = useState<Set<string>>(new Set(['conversation'])),
-    [sessionsState, setSessionsState] = useState<'loading' | 'ready' | 'failed'>('loading');
-  const [workspace, setWorkspaceState] = useState<WorkspaceMode>(() => readWorkspaceMode()),
-    [studioVisited, setStudioVisited] = useState(() => readWorkspaceMode() === 'studio'),
+    [visited, setVisited] = useState<Set<string>>(new Set(['conversation']));
+  const [studioVisited, setStudioVisited] = useState(() => readWorkspaceMode() === 'studio'),
     [dataVisited, setDataVisited] = useState(() => readWorkspaceMode() === 'data'),
     [studioProjectId, setStudioProjectId] = useState(''),
     [studioSection, setStudioSection] = useState<StudioSection>(() => readStudioSection()),
@@ -296,11 +321,7 @@ function Shell() {
     [dataSidebarOpen, setDataSidebarOpen] = useState(() => innerWidth > 850),
     [dataSidebarHost, setDataSidebarHost] = useState<HTMLElement | null>(null);
   useWorkspaceThemeScope(workspace);
-  const workspaceNow = useRef(workspace),
-    workspaceControlFocus = useRef<WorkspaceMode | null>(null);
-  useLayoutEffect(() => {
-    workspaceNow.current = workspace;
-  });
+  const workspaceControlFocus = useRef<WorkspaceMode | null>(null);
   useLayoutEffect(() => {
     if (workspaceControlFocus.current !== workspace) return;
     workspaceControlFocus.current = null;
@@ -436,11 +457,7 @@ function Shell() {
     [groupedChats, setGroupedChats] = useState(false),
     [homeRequest, setHomeRequest] = useState(0);
   const primaryFlight = useRef<Promise<Session> | null>(null),
-    navigationIntent = useRef(0),
-    managerNow = useRef(manager);
-  useLayoutEffect(() => {
-    managerNow.current = manager;
-  });
+    navigationIntent = useRef(0);
   async function openMainAgent(automatic = false, confirmed = false) {
     if (
       !automatic &&
@@ -592,15 +609,12 @@ function Shell() {
   }
   const shellManager = isSettingsCategory(manager) ? previousManager.current : manager;
   const [settingsProjectId, setSettingsProjectId] = useState('');
-  const [managerScope, setManagerScope] = useState<'global' | 'workspace'>('global'),
-    [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'failed'>('loading'),
-    [configurationState, setConfigurationState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [managerScope, setManagerScope] = useState<'global' | 'workspace'>('global');
   const [layoutsOpen, setLayoutsOpen] = useState(false),
     [namedLayouts, setNamedLayouts] = useState<NamedLayout[]>([]),
     [layoutOwner, setLayoutOwner] = useState(''),
     [visiblePanels, setVisiblePanels] = useState<DockPanel[]>(['conversation']);
   const layoutBook = useRef<LayoutPresetStore | null>(null);
-  const workspaceActive = useObservationActive(!locked && !manager && workspace === 'agent');
   const studioVisible = !locked && !manager && workspace === 'studio';
   const dataVisible = !locked && !manager && workspace === 'data';
   // Data polls its own jobs; window focus must not tear down forms or SQL drafts.
@@ -637,20 +651,7 @@ function Shell() {
     >([]);
   const [collapsed, setCollapsed] = useState<string[]>([]),
     [sessionFilter, setSessionFilter] = useState('all');
-  const [projectPins, setProjectPins] = useState<ProjectPins>({revision: 0, projects: []}),
-    [pinBusy, setPinBusy] = useState(''),
-    [pinsReady, setPinsReady] = useState(false);
-  const pinFlight = useRef<object | null>(null);
   const [bindings, setBindings] = useState<Bindings>({...defaults});
-  const sessionCache = useRef(new SessionCache());
-  const [session, setSession] = useSessionSnapshot({
-    selected,
-    authenticated: !!auth,
-    principalId: auth?.principal.id,
-    active: workspaceActive,
-    read: id => sessionCache.current.read(id),
-    onError: report,
-  });
   useEffect(() => {
     const names: Record<string, string> = {
       overview: 'Overview',
@@ -688,15 +689,10 @@ function Shell() {
   const [quickNonce, setQuickNonce] = useState(0);
   const sidebarScroll = useRef<HTMLDivElement>(null),
     searchInput = useRef<HTMLInputElement>(null),
-    selection = useRef(''),
-    sessionListFlights = useRef(new Map<string, Promise<Session[]>>()),
     project =
       projects.find(
         project => project.id === (session ? session.project_id : projectWorkbenchId || projectId),
       ) || null;
-  useLayoutEffect(() => {
-    selection.current = selected;
-  });
   const studioProject =
     studioProjects.projects.find(row => row.id === studioProjectId) ||
     projects.find(row => row.id === studioProjectId) ||
@@ -786,88 +782,6 @@ function Shell() {
     setFileRequest({id: performance.now(), sessionId: session.id, root, path: relative, line});
     openSurface('editor');
   }
-  const fetchSessions = useCallback((archived: boolean, owner: string) => {
-    const key = owner + ':' + archived;
-    const current = sessionListFlights.current.get(key);
-    if (current) return current;
-    const pending = listSessions(archived).finally(() => {
-      if (sessionListFlights.current.get(key) === pending) sessionListFlights.current.delete(key);
-    });
-    sessionListFlights.current.set(key, pending);
-    return pending;
-  }, []);
-  const loadGeneration = useRef(0);
-  const load = useCallback(async () => {
-    if (workspaceNow.current === 'data') return;
-    const epoch = authEpoch.current,
-      generation = ++loadGeneration.current,
-      current = () => epoch === authEpoch.current && generation === loadGeneration.current;
-    setSessionsState('loading');
-    setCatalogState('loading');
-    setConfigurationState('loading');
-    const results = await Promise.allSettled([
-      loadProjectPins().then(value => {
-        if (current()) {
-          setProjectPins(value);
-          setPinsReady(true);
-        }
-      }),
-      gql<{projects: Project[]}>('query{projects{id name path}}')
-        .then(data => {
-          if (current()) {
-            setProjects(data.projects);
-            setCatalogState('ready');
-          }
-        })
-        .catch(reason => {
-          if (current()) setCatalogState('failed');
-          throw reason;
-        }),
-      gql<{engines: (Engine & {label: string; installed: boolean})[]; agent_providers: Provider[]}>(
-        'query{engines{id label installed auth_state auth_detail error capabilities} agent_providers{id name model models capabilities secret_configured}}',
-      )
-        .then(data => {
-          if (current()) {
-            setEngines(
-              data.engines
-                .filter(engine => engine.installed)
-                .map(engine => ({...engine, name: engine.label, available: engine.installed})),
-            );
-            setProviders(data.agent_providers);
-            setConfigurationState('ready');
-          }
-        })
-        .catch(reason => {
-          if (current()) setConfigurationState('failed');
-          throw reason;
-        }),
-      fetchSessions(archived, auth?.principal.id || '')
-        .then(chats => {
-          if (current()) {
-            setSessions(chats);
-            setSessionsState('ready');
-          }
-        })
-        .catch(reason => {
-          if (current()) setSessionsState('failed');
-          throw reason;
-        }),
-    ]);
-    if (current()) {
-      const failures = results.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      );
-      if (failures.length)
-        report(
-          new Error(
-            failures
-              .map(result => (result.reason instanceof Error ? result.reason.message : String(result.reason)))
-              .join(' · '),
-          ),
-        );
-    }
-  }, [archived, report, auth?.principal.id, fetchSessions]);
-  useEffect(() => onUnlocked(() => void load()), [onUnlocked, load]);
   useEffect(() => {
     const narrow = matchMedia('(max-width:850px)');
     const changed = () => {
@@ -898,10 +812,6 @@ function Shell() {
     if (!auth) return;
     setStudioProjectId('');
     setStudioSection(readStudioSection());
-    setProjectPins({revision: 0, projects: []});
-    setPinsReady(false);
-    setPinBusy('');
-    pinFlight.current = null;
     try {
       const groups = JSON.parse(localStorage.getItem('termx-collapsed:' + auth.principal.id) || '[]');
       if (Array.isArray(groups)) setCollapsed(groups.filter(value => typeof value === 'string'));
@@ -1234,28 +1144,6 @@ function Shell() {
     dockGeometry,
     auth?.principal.id,
   ]);
-  // The first load belongs to the sign-in effect above; these two react to later changes only.
-  useUpdateEffect(() => {
-    if (auth) void load();
-  }, [archived]);
-  useUpdateEffect(() => {
-    if (auth && workspace !== 'data') void load();
-  }, [workspace]);
-  const refresh = useCallback(async () => {
-    if (!auth) return;
-    const epoch = authEpoch.current;
-    await load();
-    if (epoch !== authEpoch.current) return;
-    if (selection.current) {
-      const id = selection.current;
-      try {
-        const value = await sessionCache.current.read(id);
-        if (epoch === authEpoch.current && selection.current === id) setSession(value);
-      } catch (reason) {
-        if (epoch === authEpoch.current) report(reason);
-      }
-    }
-  }, [auth, load, report]);
   useEffect(() => {
     if (workspace !== 'agent') {
       setLayoutsOpen(false);
@@ -1313,16 +1201,6 @@ function Shell() {
   useEffect(() => {
     if (auth) localStorage.setItem('termx-collapsed:' + auth.principal.id, JSON.stringify(collapsed));
   }, [collapsed, auth?.principal.id]);
-  usePolling(() => fetchSessions(archived, auth!.principal.id), {
-    interval: 15000,
-    backoff: false,
-    immediate: false,
-    enabled: !!auth && workspaceActive,
-    resetKey: auth?.principal.id + ':' + archived,
-    onResult: chats =>
-      setSessions(previous => (JSON.stringify(previous) === JSON.stringify(chats) ? previous : chats)),
-    onError: () => {},
-  });
   useEffect(() => {
     if (auth) localStorage.setItem('termx-keybindings:' + auth.principal.id, JSON.stringify(bindings));
   }, [bindings, auth?.principal.id]);
@@ -1384,32 +1262,6 @@ function Shell() {
     project?.id,
     projectWorkbenchId,
   ]);
-  async function pinProject(id: string) {
-    if (!pinsReady || pinBusy || !authNow.current) return;
-    const pending = fence(),
-      ticket = {};
-    pinFlight.current = ticket;
-    setPinBusy(id);
-    try {
-      const value = await changeProjectPin(id, !projectPins.projects.includes(id), projectPins.revision);
-      if (pending.current()) setProjectPins(value);
-    } catch (reason) {
-      if (pending.current()) {
-        report(reason);
-        try {
-          const value = await loadProjectPins();
-          if (pending.current()) setProjectPins(value);
-        } catch (error) {
-          if (pending.current()) report(error);
-        }
-      }
-    } finally {
-      if (pinFlight.current === ticket) {
-        pinFlight.current = null;
-        setPinBusy('');
-      }
-    }
-  }
   const sidebarPreviews = useMemo(
     () =>
       new Map(
