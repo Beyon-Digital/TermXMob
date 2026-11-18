@@ -7,6 +7,9 @@ import {
   useWorkspaceThemeScope,
   workspaceRoute,
 } from './shell/routes';
+import AuthGate, {useAuth} from './shell/AuthGate';
+import {ErrorProvider, useErrorMessage, useReport} from './shell/errors';
+export {SignIn} from './shell/SignIn';
 import {useStudioProjects} from './lib/studio-projects';
 import {useStudioProjectGuard} from './lib/studio-draft-state';
 import StudioProjectSwitchDialog from './features/StudioProjectSwitchDialog';
@@ -142,6 +145,7 @@ import {
   type CommandInvocation,
 } from './shell/commands';
 import {useShortcuts} from './shell/use-shortcuts';
+import {useUpdateEffect} from './shell/use-update-effect';
 import {
   layouts,
   validateDockMap,
@@ -249,10 +253,20 @@ export function sessionListPreview(session: Pick<Session, 'draft_text' | 'turns'
 }
 
 export default function App() {
-  const {auth, setAuth, methods, setMethods, booting, setBooting, authEpoch, authNow, lockInfoNow, fence} =
-    useAuthSession();
-  const [error, setError] = useState(''),
-    [projects, setProjects] = useState<Project[]>([]),
+  return (
+    <ErrorProvider>
+      <AuthGate>
+        <Shell />
+      </AuthGate>
+    </ErrorProvider>
+  );
+}
+
+function Shell() {
+  const {auth, authEpoch, authNow, fence, locked, lockedNow, beginLock, openHostStop, onUnlocked} = useAuth();
+  const report = useReport();
+  const {error, clearError} = useErrorMessage();
+  const [projects, setProjects] = useState<Project[]>([]),
     [sessions, setSessions] = useState<Session[]>([]),
     [selected, setSelected] = useState(''),
     [projectId, setProjectId] = useState(''),
@@ -281,7 +295,7 @@ export default function App() {
     [studioSidebarOpen, setStudioSidebarOpen] = useState(() => innerWidth > 850),
     [dataSidebarOpen, setDataSidebarOpen] = useState(() => innerWidth > 850),
     [dataSidebarHost, setDataSidebarHost] = useState<HTMLElement | null>(null);
-  useWorkspaceThemeScope(auth ? workspace : 'agent');
+  useWorkspaceThemeScope(workspace);
   const workspaceNow = useRef(workspace),
     workspaceControlFocus = useRef<WorkspaceMode | null>(null);
   useLayoutEffect(() => {
@@ -586,16 +600,6 @@ export default function App() {
     [layoutOwner, setLayoutOwner] = useState(''),
     [visiblePanels, setVisiblePanels] = useState<DockPanel[]>(['conversation']);
   const layoutBook = useRef<LayoutPresetStore | null>(null);
-  const [locked, setLocked] = useState(false),
-    [lockInfo, setLockInfo] = useState<LockState | null>(null),
-    [lockPreparing, setLockPreparing] = useState(false),
-    [lockNotice, setLockNotice] = useState(''),
-    [hostStopOpen, setHostStopOpen] = useState(false);
-  const lockedNow = useRef(false),
-    lockFlight = useRef(false);
-  useLayoutEffect(() => {
-    lockedNow.current = locked;
-  });
   const workspaceActive = useObservationActive(!locked && !manager && workspace === 'agent');
   const studioVisible = !locked && !manager && workspace === 'studio';
   const dataVisible = !locked && !manager && workspace === 'data';
@@ -638,15 +642,6 @@ export default function App() {
     [pinsReady, setPinsReady] = useState(false);
   const pinFlight = useRef<object | null>(null);
   const [bindings, setBindings] = useState<Bindings>({...defaults});
-  const lockIntent = useRef<object | null>(null);
-  useLayoutEffect(() => {
-    lockInfoNow.current = lockInfo;
-  });
-  const renderEpoch = authEpoch.current;
-  const report = useCallback(
-    (reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)),
-    [],
-  );
   const sessionCache = useRef(new SessionCache());
   const [session, setSession] = useSessionSnapshot({
     selected,
@@ -872,37 +867,7 @@ export default function App() {
         );
     }
   }, [archived, report, auth?.principal.id, fetchSessions]);
-  async function acceptAuth(value: Auth) {
-    const changed =
-      authNow.current?.principal.id !== value.principal.id ||
-      authNow.current?.session_id !== value.session_id;
-    if (changed) authEpoch.current++;
-    const generation = authEpoch.current;
-    authNow.current = value;
-    if (!nativeWorkspace()) await restoreWindowDrafts(value.principal.id).catch(report);
-    if (generation === authEpoch.current) setAuth(value);
-  }
-  async function restore() {
-    const pending = fence();
-    try {
-      await checkCompatibility();
-      const methods = await request<Methods>('/auth/methods', {}, false);
-      if (!pending.current()) return;
-      setMethods(methods);
-      if (methods.configured) {
-        const value = await request<Auth>('/auth/me');
-        if (pending.accepts(value)) await acceptAuth(value);
-      }
-    } catch (reason) {
-      if (!pending.current()) return;
-      if (reason instanceof ApiError && reason.status === 423) {
-        setLocked(true);
-        await restoreLockState();
-      } else if (!(reason instanceof Error && reason.message.includes('Session expired'))) report(reason);
-    } finally {
-      setBooting(false);
-    }
-  }
+  useEffect(() => onUnlocked(() => void load()), [onUnlocked, load]);
   useEffect(() => {
     const narrow = matchMedia('(max-width:850px)');
     const changed = () => {
@@ -921,180 +886,14 @@ export default function App() {
     return () => narrow.removeEventListener('change', changed);
   }, []);
   useEffect(() => {
-    void restore();
-    const signedOut = () => {
-      authEpoch.current++;
-      authNow.current = null;
-      lockInfoNow.current = null;
-      lockIntent.current = null;
-      lockFlight.current = false;
-      setLocked(false);
-      setLockInfo(null);
-      setLockPreparing(false);
-      setAuth(null);
-      setSession(null);
-      setSessions([]);
-      setProjects([]);
-      setProjectPins({revision: 0, projects: []});
-      setPinsReady(false);
-      setPinBusy('');
-      pinFlight.current = null;
-      setEngines([]);
-      setProviders([]);
-      setIncoming(null);
-      setManagerState('');
-      setSelected('');
-      setProjectId('');
-      setProjectWorkbenchId('');
-      projectWorkbenchNow.current = '';
-      setControlSidebarOpen(false);
-      setPrimaryId('');
-      setMainState('loading');
-      setGroupedChats(false);
-      primaryFlight.current = null;
-      layoutBook.current = null;
-      setLayoutOwner('');
-      setSidebarOwner('');
-      setSidebarHover(false);
-      setFileRequest(null);
-      setPanelActivation(undefined);
-      setSearchOpen(false);
-      setNamedLayouts([]);
-      undo.current = [];
-      focusRestore.current = null;
-      setVisited(new Set(['conversation']));
-      setStudioVisited(false);
-      setStudioProjectId('');
-      setStudioSection('create');
-      sessionListFlights.current.clear();
-      sessionCache.current.clear();
-    };
-    window.addEventListener('termx-signed-out', signedOut);
     const status = () => setOnline(navigator.onLine);
     window.addEventListener('online', status);
     window.addEventListener('offline', status);
     return () => {
-      window.removeEventListener('termx-signed-out', signedOut);
       window.removeEventListener('online', status);
       window.removeEventListener('offline', status);
     };
   }, []);
-  async function restoreLockState() {
-    const pending = fence();
-    try {
-      const value = await lockState();
-      if (!pending.accepts(value)) return;
-      lockInfoNow.current = value;
-      setLockInfo(value);
-    } catch (reason) {
-      if (pending.current()) setLockNotice(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-  async function acceptUnlockedAuth(value: Auth) {
-    const generation = authEpoch.current;
-    authNow.current = value;
-    if (!nativeWorkspace()) await restoreWindowDrafts(value.principal.id).catch(report);
-    if (generation === authEpoch.current && authNow.current?.session_id === value.session_id) setAuth(value);
-  }
-  async function finishUnlock(value: unknown) {
-    const current = value as Auth;
-    if (renderEpoch !== authEpoch.current) throw Error('Unlock response belongs to an earlier session.');
-    if (
-      !current?.principal?.id ||
-      !current.session_id ||
-      (authNow.current && current.principal.id !== authNow.current.principal.id) ||
-      (lockInfoNow.current && current.session_id !== lockInfoNow.current.session_id)
-    )
-      throw Error('Unlock identity changed. Sign out to use another account.');
-    setLocked(false);
-    lockedNow.current = false;
-    lockInfoNow.current = null;
-    setLockInfo(null);
-    setLockNotice('');
-    await acceptUnlockedAuth(current);
-    void load();
-  }
-  async function beginLock() {
-    const owner = authNow.current;
-    if (!owner || lockFlight.current) return;
-    const pending = fence(),
-      ticket = {};
-    lockIntent.current = ticket;
-    lockFlight.current = true;
-    lockedNow.current = true;
-    setLocked(true);
-    setLockPreparing(true);
-    setLockNotice('');
-    sessionStorage.setItem('termx-browser-view-paused', 'true');
-    window.dispatchEvent(new Event('termx-locked'));
-    try {
-      const warnings = await preserveBeforeLock(owner.principal.id);
-      if (!pending.current() || lockIntent.current !== ticket) return;
-      if (warnings.length)
-        setLockNotice('Your local changes were retained where storage is available. ' + warnings.join(' '));
-      await lockWorkspace();
-      if (lockIntent.current === ticket && pending.identity()) await restoreLockState();
-    } catch (error) {
-      if (lockIntent.current === ticket && pending.identity()) {
-        setLockNotice(
-          'Lock could not be confirmed. Observation remains hidden. ' +
-            (error instanceof Error ? error.message : String(error)),
-        );
-        await restoreLockState();
-      }
-    } finally {
-      if (lockIntent.current === ticket && pending.identity()) {
-        lockFlight.current = false;
-        setLockPreparing(false);
-      }
-    }
-  }
-  useEffect(() => {
-    const lock = () => {
-      lockedNow.current = true;
-      authEpoch.current++;
-      setLocked(true);
-      sessionStorage.setItem('termx-browser-view-paused', 'true');
-      window.dispatchEvent(new Event('termx-locked'));
-      void restoreLockState();
-    };
-    const unlock = () => {
-      const pending = fence();
-      void request<Auth>('/auth/me', {}, false)
-        .then(value => {
-          if (!pending.accepts(value)) return;
-          setLocked(false);
-          lockedNow.current = false;
-          lockInfoNow.current = null;
-          setLockInfo(null);
-          setLockNotice('');
-          void acceptUnlockedAuth(value);
-        })
-        .catch(reason => {
-          if (pending.current()) report(reason);
-        });
-    };
-    window.addEventListener('termx-session-locked', lock);
-    window.addEventListener('termx-session-unlocked', unlock);
-    let stopped = false,
-      release: (() => void) | undefined;
-    void listenNativeLocks()
-      .then(value => {
-        if (stopped) value();
-        else release = value;
-      })
-      .catch(report);
-    return () => {
-      stopped = true;
-      release?.();
-      window.removeEventListener('termx-session-locked', lock);
-      window.removeEventListener('termx-session-unlocked', unlock);
-    };
-  }, [auth?.principal.id, lockInfo?.session_id]);
-  useEffect(() => {
-    document.body.classList.toggle('workspace-lock-active', locked);
-    return () => document.body.classList.remove('workspace-lock-active');
-  }, [locked]);
   useEffect(() => {
     if (!auth) return;
     setStudioProjectId('');
@@ -1331,7 +1130,7 @@ export default function App() {
     openNewChat: () => openNewChat(),
     refreshConversations: () => void load(),
     lockWorkspace: () => void beginLock(),
-    stopHost: () => setHostStopOpen(true),
+    stopHost: openHostStop,
     chooseLayout: value => chooseLayout(value),
     openSurface,
     focusPanel,
@@ -1435,10 +1234,11 @@ export default function App() {
     dockGeometry,
     auth?.principal.id,
   ]);
-  useEffect(() => {
+  // The first load belongs to the sign-in effect above; these two react to later changes only.
+  useUpdateEffect(() => {
     if (auth) void load();
   }, [archived]);
-  useEffect(() => {
+  useUpdateEffect(() => {
     if (auth && workspace !== 'data') void load();
   }, [workspace]);
   const refresh = useCallback(async () => {
@@ -1871,7 +1671,7 @@ export default function App() {
     if (state.buffers.length) setVisited(old => new Set([...old, 'editor']));
     chooseLayout(event.panel);
     setSession(await sessionCache.current.read(state.sessionId));
-    setError('');
+    clearError();
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   }
   useEffect(() => {
@@ -1984,37 +1784,6 @@ export default function App() {
         report,
       );
   }
-  if (booting)
-    return (
-      <main className="loading-screen">
-        <div className="brand">TermX</div>
-        <p>Connecting to your workspace…</p>
-      </main>
-    );
-  if (!auth && locked)
-    return (
-      <LockScreen
-        state={lockInfo}
-        preparing={lockPreparing}
-        notice={lockNotice}
-        onRetry={() => void restoreLockState()}
-        onRetryLock={() => void beginLock()}
-        onUnlocked={finishUnlock}
-      />
-    );
-  if (!auth)
-    return (
-      <SignIn
-        methods={methods}
-        onDone={async () => {
-          await acceptAuth(await request<Auth>('/auth/me'));
-          setMethods(await request('/auth/methods', {}, false));
-          setError('');
-        }}
-        onError={report}
-        error={error}
-      />
-    );
   const controlPage = ['overview', 'projects', 'tasks'].includes(manager);
   const workspaceControlPage = controlPage || manager === 'workflows';
   const managerTitle: Record<string, string> = {
@@ -3109,7 +2878,7 @@ export default function App() {
         {error && (
           <div className="toast error-toast" role="alert">
             <span>{error}</span>
-            <Button variant="ghost" size="sm" onClick={() => setError('')}>
+            <Button variant="ghost" size="sm" onClick={clearError}>
               Dismiss
             </Button>
           </div>
@@ -3346,158 +3115,11 @@ export default function App() {
         busy={studioProjectGuard.activity.busy}
         onDecision={studioProjectGuard.decide}
       />
-      <HostStop open={hostStopOpen && !locked} onOpenChange={setHostStopOpen} />
-      {locked && (
-        <LockScreen
-          state={lockInfo}
-          preparing={lockPreparing}
-          notice={lockNotice}
-          onRetry={() => void restoreLockState()}
-          onRetryLock={() => void beginLock()}
-          onUnlocked={finishUnlock}
-        />
-      )}{' '}
       {redocking && !locked && (
         <div className="redock-cover" role="status">
           Returning your draft and unsaved files to the main workspace…
         </div>
       )}
     </>
-  );
-}
-export function SignIn({
-  methods,
-  onDone,
-  onError,
-  error,
-}: {
-  methods: Methods | null;
-  onDone: () => Promise<void>;
-  onError: (error: unknown) => void;
-  error: string;
-}) {
-  const [username, setUsername] = useState(''),
-    [password, setPassword] = useState(''),
-    [bootstrap, setBootstrap] = useState(''),
-    [busy, setBusy] = useState(false);
-  async function submit() {
-    setBusy(true);
-    try {
-      await login(username, password, !methods?.configured, bootstrap);
-      await onDone();
-    } catch (error) {
-      onError(error);
-    } finally {
-      setBusy(false);
-      setPassword('');
-    }
-  }
-  async function sso(id: string) {
-    try {
-      const result = await request<{authorization_url: string}>(
-        '/auth/oidc/' + id + '/begin',
-        json('POST', {}),
-        false,
-      );
-      location.assign(result.authorization_url);
-    } catch (error) {
-      onError(error);
-    }
-  }
-  return (
-    <main className="sign-in">
-      <div className="sign-in-brand">TermX</div>
-      <section className="sign-in-card">
-        <h1>{methods?.configured ? 'Connect to your workspace' : 'Set up your workspace'}</h1>
-        <p>Connect securely, then tell your main agent what you want to get done.</p>
-        {!nativeWorkspace() && <PairSignIn onDone={onDone} />}
-        <form
-          onSubmit={event => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
-          <label>
-            Username
-            <Input
-              required
-              name="username"
-              autoComplete="username"
-              value={username}
-              onChange={event => setUsername(event.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <Input
-              required
-              name="password"
-              type="password"
-              minLength={methods?.configured ? 1 : 12}
-              autoComplete={methods?.configured ? 'current-password' : 'new-password'}
-              aria-describedby={methods?.configured ? undefined : 'password-rule'}
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-            />
-            {!methods?.configured && (
-              <small id="password-rule" className="field-hint">
-                At least 12 characters.
-              </small>
-            )}
-          </label>
-          {!nativeWorkspace() &&
-            !methods?.configured &&
-            (methods?.passcode_required ? (
-              <label>
-                Host passcode
-                <Input
-                  type="password"
-                  name="host-passcode"
-                  required
-                  aria-label="Host passcode"
-                  autoComplete="off"
-                  value={bootstrap}
-                  onChange={event => setBootstrap(event.target.value)}
-                />
-                <small className="field-hint">
-                  Use the passcode configured by the host owner in its launch settings.
-                </small>
-              </label>
-            ) : (
-              <details>
-                <summary>Existing host passcode</summary>
-                <Input
-                  type="password"
-                  name="host-passcode"
-                  aria-label="Existing host passcode"
-                  autoComplete="off"
-                  value={bootstrap}
-                  onChange={event => setBootstrap(event.target.value)}
-                />
-              </details>
-            ))}
-          <Button type="submit" disabled={busy || !methods}>
-            {busy ? 'Connecting…' : methods?.configured ? 'Continue with password' : 'Create owner account'}
-          </Button>
-        </form>
-        {methods?.methods
-          .filter(method => method.flow === 'redirect')
-          .map(method => (
-            <Button key={method.id} variant="outline" onClick={() => sso(method.id)}>
-              Continue with {method.label || method.id}
-            </Button>
-          ))}
-        {error && (
-          <p role="alert" className="inline-error">
-            {error}
-          </p>
-        )}
-        <small>
-          <Shield size={13} />
-          Managed sessions protect every connection.
-        </small>
-      </section>
-      <p className="sign-in-footer">Your conversations and work stay with your host.</p>
-    </main>
   );
 }
