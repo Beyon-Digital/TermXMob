@@ -8,8 +8,9 @@ Chromium: the Source control view lists modified, added (including a file in a n
 and stage-all change the index on disk; a hunk is staged and unstaged from the diff tab; diff tabs open inline and side by
 side, are one tab per file side, and move between changes with F7; the commit box commits with Control+Enter and the commit is
 in `git log`; the status bar shows the dirty mark and clears it; the primary button becomes Push when the checkout is clean
-and ahead, confirms the exact push, and the commit reaches the remote; the pull request and branch forms open; there is no
-discard. It also checks the 375px layout (drawer view and an inline diff tab), no horizontal overflow, axe in both themes and
+and ahead, confirms the exact push, and the commit reaches the remote; the pull request and branch forms open; Discard
+changes lists exactly what would be lost, Cancel and Escape change nothing, and Discard changes and Discard all restore
+tracked files and delete untracked ones on disk. It also checks the 375px layout (drawer view and an inline diff tab), no horizontal overflow, axe in both themes and
 no page errors. Screenshots go to OUTPUT_DIR in light and dark at 1280x900 and 375x812.
 
 No agents or providers run, no GitHub call is made, and no default configuration store is touched.
@@ -165,8 +166,7 @@ def run(destination: str, axe_path: str | None) -> None:
                 assert sorted(letters) == ['D', 'M', 'U', 'U'], letters
                 expect(status.get_by_role('button', name=re.compile(r'^main'))).to_contain_text('uncommitted', timeout=30000)
                 expect(scm.get_by_text('Nothing is staged. Stage changes first.')).to_be_visible()
-                expect(scm.get_by_role('button', name=re.compile('discard', re.I))).to_have_count(0)
-                step('edits listed: M, two U (one in a new folder), D; status bar dirty; commit reason; no discard')
+                step('edits listed: M, two U (one in a new folder), D; status bar dirty; commit reason')
                 shot('02-scm-changes')
                 axe(page, f'{scheme}-1280-scm-changes', report, axe_source)
 
@@ -229,6 +229,50 @@ def run(destination: str, axe_path: str | None) -> None:
                 expect(page.get_by_text('Nothing is staged for this file.')).to_be_visible(timeout=20000)
                 assert git(checkout, 'diff', '--cached', '--name-only').split() == []
                 step('F7 and Shift+F7 moved between changes; one hunk was staged and unstaged from its diff tab')
+
+                # --- discard: the dry run is shown, Cancel changes nothing, Discard changes does exactly what was listed ------------------
+                expect(scm.get_by_role('button', name=re.compile('^Discard changes ', re.I))).to_have_count(4)
+                scm.get_by_role('button', name='Discard changes new_feature.py').click()
+                gone = page.get_by_role('dialog', name='Discard changes to new_feature.py')
+                expect(gone).to_be_visible()
+                expect(gone).to_contain_text('untracked file is deleted')
+                expect(gone).to_contain_text('This cannot be undone.')
+                assert gone.locator('.button-destructive').count() == 1, 'only the final button is destructive'
+                assert gone.locator('.button-primary').count() == 0
+                assert (checkout / 'new_feature.py').exists(), 'the dry run must not delete anything'
+                shot('10-confirm-discard')
+                axe(page, f'{scheme}-1280-confirm-discard', report, axe_source)
+                gone.get_by_role('button', name='Cancel').click()
+                expect(gone).to_have_count(0)
+                assert (checkout / 'new_feature.py').exists(), 'Cancel must keep the file'
+                scm.get_by_role('button', name='Discard changes new_feature.py').click()
+                expect(gone).to_be_visible()
+                page.keyboard.press('Escape')
+                expect(gone).to_have_count(0)
+                assert (checkout / 'new_feature.py').exists(), 'Escape must keep the file'
+                scm.get_by_role('button', name='Discard changes new_feature.py').click()
+                gone.get_by_role('button', name='Discard changes').click()
+                expect(scm.get_by_text('Changes discarded.')).to_be_visible(timeout=30000)
+                assert not (checkout / 'new_feature.py').exists(), 'the untracked file should be deleted'
+                scm.get_by_role('button', name='Discard changes docs/notes.md').click()
+                back = page.get_by_role('dialog', name='Discard changes to docs/notes.md')
+                expect(back).to_contain_text('deleted file is restored')
+                back.get_by_role('button', name='Discard changes').click()
+                expect(scm.get_by_text('Changes discarded.')).to_be_visible(timeout=30000)
+                assert (checkout / 'docs' / 'notes.md').read_text() == FILES['docs/notes.md'], 'the deleted file should be restored'
+                scm.get_by_role('button', name='Discard all changes').click()
+                everything = page.get_by_role('dialog', name='Discard changes to 2 files')
+                expect(everything.get_by_role('list', name='Files').get_by_role('listitem')).to_have_count(2)
+                expect(everything).to_contain_text('edits are discarded')
+                shot('11-confirm-discard-all')
+                everything.get_by_role('button', name='Discard changes').click()
+                expect(scm.get_by_text('No changes. The working tree matches the last commit.')).to_be_visible(timeout=30000)
+                assert git(checkout, 'status', '--porcelain', '--untracked-files=all').strip() == '', git(checkout, 'status', '--porcelain')
+                assert (checkout / 'app.py').read_text() == APP, 'app.py should be restored from the index'
+                step('Discard changes: the dry run listed the file, Cancel and Escape kept it, the final button deleted an untracked file, restored a deleted one, and Discard all cleaned the tree')
+                edit_files(checkout)
+                scm.get_by_role('button', name='Refresh source control').click()
+                expect(changes.get_by_role('listitem')).to_have_count(4, timeout=30000)
 
                 # --- stage everything, then commit from the box with Control+Enter ---------------------------------------------------
                 scm.get_by_role('button', name='Stage all changes').click()
@@ -315,6 +359,15 @@ def run(destination: str, axe_path: str | None) -> None:
                 small.screenshot(path=str(out / f'01-mobile-scm-{scheme}-375.png'))
                 no_overflow(small, f'phone-scm-{scheme}', report)
                 axe(small, f'{scheme}-375-scm', report, axe_source)
+                drawer.get_by_role('list', name='Changes', exact=True).get_by_role('button', name='Discard changes app.py').click()
+                sheet = small.get_by_role('dialog', name='Discard changes to app.py')
+                expect(sheet).to_be_visible()
+                small.wait_for_timeout(300)
+                small.screenshot(path=str(out / f'10-mobile-confirm-discard-{scheme}-375.png'))
+                no_overflow(small, f'phone-discard-{scheme}', report)
+                axe(small, f'{scheme}-375-confirm-discard', report, axe_source)
+                sheet.get_by_role('button', name='Cancel').click()
+                expect(sheet).to_have_count(0)
                 drawer.get_by_role('button', name='Pull request').click()
                 small.wait_for_timeout(300)
                 small.screenshot(path=str(out / f'08-mobile-scm-pull-request-{scheme}-375.png'))

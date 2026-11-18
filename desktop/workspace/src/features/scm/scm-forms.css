@@ -80,7 +80,12 @@
 
   /* The exact-operation confirmation. */
   .scm-dialog {
+    /* Above the phone drawer (z-index 80) the confirmation is opened from. */
+    z-index: 90;
     width: min(480px, calc(100vw - var(--space-32)));
+  }
+  .dialog-overlay:has(+ .scm-dialog) {
+    z-index: 89;
   }
   .scm-dialog-rows {
     display: grid;
