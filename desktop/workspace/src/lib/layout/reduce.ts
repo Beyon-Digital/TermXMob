@@ -1,6 +1,7 @@
 import {
   LIMITS,
   MULTI_INSTANCE_KINDS,
+  PLACEHOLDER_KINDS,
   allGroups,
   allTabs,
   defaultLayout,
@@ -243,7 +244,7 @@ export function reduceLayout(state: LayoutState, action: LayoutAction, options: 
       const existing = action.forceNew
         ? undefined
         : allTabs(layout).find(tab => sameTab(tab, action, multi)) ??
-          (multi.has(action.kind) && action.ref === undefined ? allTabs(layout).find(tab => tab.kind === action.kind) : undefined);
+          (multi.has(action.kind) && PLACEHOLDER_KINDS.has(action.kind) && action.ref === undefined ? allTabs(layout).find(tab => tab.kind === action.kind) : undefined);
       if (existing) {
         const found = findTab(layout, existing.id)!;
         let next = reveal(layout, found.group, existing.id);
@@ -258,7 +259,7 @@ export function reduceLayout(state: LayoutState, action: LayoutAction, options: 
       }
       // A multi-instance tab that has no `ref` yet (the panel's starting Terminal, an empty Editor) takes the first one asked for.
       const loose =
-        !action.forceNew && multi.has(action.kind) && action.ref !== undefined
+        !action.forceNew && multi.has(action.kind) && PLACEHOLDER_KINDS.has(action.kind) && action.ref !== undefined
           ? allTabs(layout).find(tab => tab.kind === action.kind && tab.ref === undefined)
           : undefined;
       if (loose) {
