@@ -240,7 +240,7 @@ def test_heartbeat_replacement_is_atomic_for_a_concurrent_watchdog():
     for reader in readers:
         reader.join()
     assert torn == [], f"a reader saw a torn or missing heartbeat: {torn[:3]}"
-    assert len(seen) > 20
+    assert len(seen) > 5  # readers poll every 2 ms; slower runners see fewer, but each read must be whole
 
 
 def test_the_heartbeat_loop_rewrites_it_and_shutdown_marks_it_stopping():

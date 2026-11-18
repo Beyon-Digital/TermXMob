@@ -97,7 +97,7 @@ it('saves every unsaved form from the footer and then reports a clean page',asyn
  edit('first');fireEvent.click(screen.getByRole('button',{name:'Save'}));
  await waitFor(()=>expect(screen.getByRole('status')).toBeEmptyDOMElement());
  expect(saveFirst).toHaveBeenCalledOnce();expect(saveSecond).not.toHaveBeenCalled();
- expect(leave()).toBe(true);
+ await waitFor(()=>expect(leave()).toBe(true)); // the clean state lands a render after the status empties
 });
 
 it('asks before discarding on a category change and keeps the draft when the person keeps editing',()=>{
