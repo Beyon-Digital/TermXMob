@@ -74,8 +74,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y patchelf
-      - name: Test
-        run: uv run --locked --extra development --extra media pytest -q
+      # The suite is serial-heavy on Windows (one run took 66 min). Everything except the two real-QuickJS runtime
+      # files is independent per test (own tmp config dir), so it runs on all cores; those two start real worker
+      # runtimes with timing budgets that fail under CPU contention, so they run alone afterwards.
+      # --durations prints the slowest tests so regressions in run time are visible in every job.
+      - name: Test (parallel)
+        run: >
+          uv run --locked --extra development --extra media pytest -q -n auto --durations=20
+          --ignore=tests/test_workflow_integration.py --ignore=tests/test_workflow_runtime.py
+      - name: Test (real workflow runtime, serial)
+        run: uv run --locked --extra development --extra media pytest -q --durations=10 tests/test_workflow_integration.py tests/test_workflow_runtime.py
 
   linux-desktop:
     name: linux desktop capture
