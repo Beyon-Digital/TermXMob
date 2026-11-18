@@ -147,6 +147,14 @@ import {
 } from './commands';
 import {useShortcuts} from './use-shortcuts';
 import AgentSidebar, {useSidebarState} from './AgentSidebar';
+import {CoordinationSidebar, InspectedTaskSupervisor} from './CoordinationSidebar';
+import ManagerOverlay from './ManagerOverlay';
+import SettingsHost from './SettingsHost';
+import WorkflowsHost from './WorkflowsHost';
+import WorkspaceHeader from './WorkspaceHeader';
+import {managerTitle} from './manager-titles';
+import {useCoordination} from './use-coordination';
+import StatusBar from './StatusBar';
 import AddProjectHost from './dialogs/AddProjectHost';
 import CommandPaletteDialog from './dialogs/CommandPaletteDialog';
 import LayoutsDialog from './dialogs/LayoutsDialog';
@@ -236,14 +244,6 @@ type LayoutSnapshot = {
   sidebarWidth: number;
   rightWidth: number;
 };
-const projectSettingsCategories = new Set([
-  'agents',
-  'extensions',
-  'memory',
-  'automations',
-  'runners',
-  'access',
-]);
 
 export default function Shell() {
   const navigation = useShellNavigation();
@@ -347,75 +347,7 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
       path: string;
       line?: number;
     } | null>(null);
-  const [coordinationOpen, setCoordinationOpen] = useState(false),
-    [coordinationTarget, setCoordinationTarget] = useState<HTMLDivElement | null>(null),
-    [coordinationSummary, setCoordinationSummary] = useState<CoordinationSidebarSummary>({
-      hasContent: false,
-      loading: false,
-      active: 0,
-      attention: 0,
-      done: 0,
-      plans: 0,
-      stale: false,
-    });
-  const [inspectedCoordinationTask, setInspectedCoordinationTask] = useState<{
-    id: string;
-    owner: string;
-    sessionId: string;
-  } | null>(null);
-  const coordinationVisible = workspace === 'agent' && !manager && coordinationOpen;
-  const [coordinationRetained, setCoordinationRetained] = useState(false);
-  useEffect(() => {
-    if (coordinationVisible) {
-      setCoordinationRetained(true);
-      return;
-    }
-    if (!coordinationRetained) return;
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches,
-      duration =
-        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--motion-exit')) || 120;
-    const timer = setTimeout(() => setCoordinationRetained(false), reduce ? 0 : duration);
-    return () => clearTimeout(timer);
-  }, [coordinationVisible, coordinationRetained]);
-  const coordinationAutoOpened = useRef(false),
-    coordinationAside = useRef<HTMLElement>(null),
-    coordinationToggle = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    let preference: string | null = null;
-    try {
-      if (auth) preference = localStorage.getItem('termx-coordination-sidebar:' + auth.principal.id);
-    } catch {}
-    coordinationAutoOpened.current = preference !== null;
-    setCoordinationOpen(preference === 'open');
-    setCoordinationSummary({
-      hasContent: false,
-      loading: false,
-      active: 0,
-      attention: 0,
-      done: 0,
-      plans: 0,
-      stale: false,
-    });
-  }, [auth?.principal.id]);
-  const receiveCoordinationSummary = useCallback((value: CoordinationSidebarSummary) => {
-    setCoordinationSummary(previous =>
-      JSON.stringify(previous) === JSON.stringify(value) ? previous : value,
-    );
-    if (value.hasContent && !coordinationAutoOpened.current) {
-      coordinationAutoOpened.current = true;
-      setCoordinationOpen(true);
-    }
-  }, []);
-  function showCoordination(open: boolean) {
-    coordinationAutoOpened.current = true;
-    setCoordinationOpen(open);
-    try {
-      if (auth)
-        localStorage.setItem('termx-coordination-sidebar:' + auth.principal.id, open ? 'open' : 'closed');
-    } catch {}
-    if (!open && coordinationAside.current?.contains(document.activeElement))
-      coordinationToggle.current?.focus();
-  }
+  const coordination = useCoordination({workspace, manager});
   const previousManager = useRef('');
   const botsWaiting = useBotsNeedYouCount(!!auth && workspace !== 'data');
   const [primaryId, setPrimaryId] = useState(''),
@@ -636,22 +568,10 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   });
   const [bindings, setBindings] = useState<Bindings>({...defaults});
   useEffect(() => {
-    const names: Record<string, string> = {
-      overview: 'Overview',
-      projects: 'Projects',
-      tasks: 'Activity',
-      workflows: 'Workflows',
-      agents: 'Agents',
-      models: 'Models & engines',
-      cloud: 'Cloud accounts',
-      automations: 'Automations',
-      runners: 'Runners',
-      access: 'Access & sessions',
-    };
     const page = shellManager
       ? isSettingsCategory(manager)
         ? 'Settings'
-        : names[shellManager] || 'Control plane'
+        : managerTitle[shellManager] || 'Control plane'
       : workspace === 'data'
         ? 'Data'
         : workspace === 'studio'
@@ -659,12 +579,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
           : session?.title || 'Main agent';
     document.title = page + ' · TermX';
   }, [manager, shellManager, workspace, session?.title]);
-  const coordinationTasks = useMemo(() => {
-    const tasks = (session?.id === selected ? session.turns || [] : [])
-      .map(turn => turn.task)
-      .filter((task): task is Task => !!task && !task.coordination_report);
-    return [...new Map(tasks.map(task => [task.id, task])).values()].reverse().slice(0, 10);
-  }, [selected, session?.id, session?.turns]);
   const undo = useRef<LayoutSnapshot[]>([]),
     focusRestore = useRef<LayoutSnapshot | null>(null),
     browserCommand = useRef<BrowserCommand | null>(null),
@@ -1229,18 +1143,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   }
   const controlPage = ['overview', 'projects', 'tasks'].includes(manager);
   const workspaceControlPage = controlPage || manager === 'workflows';
-  const managerTitle: Record<string, string> = {
-    overview: 'Overview',
-    projects: 'Projects',
-    tasks: 'Activity',
-    workflows: 'Workflows',
-    agents: 'Agents',
-    models: 'Models & engines',
-    cloud: 'Cloud accounts',
-    automations: 'Automations',
-    runners: 'Runners',
-    access: 'Access & sessions',
-  };
   const managerReturnLabel =
     isSettingsCategory(manager) && previousManager.current
       ? 'Back to ' + (managerTitle[previousManager.current] || 'workspace')
@@ -1465,363 +1367,100 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
           )}
         </WorkspaceNavigation>
         <div className="workspace-main">
-          <header className="workspace-header">
-            <div className="breadcrumb">
-              <span>
-                {shellManager
-                  ? 'TermX'
-                  : workspace === 'data'
-                    ? 'Data'
-                    : workspace === 'studio'
-                      ? 'Studio'
-                      : selected === primaryId
-                        ? 'Main agent'
-                        : project?.name || 'Chat'}
-              </span>
-              <ChevronRight size={12} />
-              <strong>
-                {shellManager
-                  ? managerTitle[shellManager] || 'Control plane'
-                  : workspace === 'data'
-                    ? 'Database & BI'
-                    : workspace === 'studio'
-                      ? {
-                          create: 'Create',
-                          library: 'Library',
-                          assets: 'Saved assets',
-                          settings: 'Studio Settings',
-                          music: 'Music',
-                        }[studioSection]
-                      : session?.title ||
-                        (!selected && projectWorkbenchId
-                          ? project
-                            ? 'Files'
-                            : 'Project unavailable'
-                          : !selected && project
-                            ? 'Files'
-                            : mainState === 'loading'
-                              ? 'Opening main agent…'
-                              : 'Main agent')}
-              </strong>
-            </div>
-            {workspace === 'agent' && !online && (
-              <span className="workspace-connection-alert" role="status">
-                Offline
-              </span>
-            )}
-            <span className="flex-spacer" />
-            {shellManager ? (
-              <Button
-                className="control-return"
-                size="sm"
-                variant="ghost"
-                aria-label={managerReturnLabel}
-                onClick={() => {
-                  if (isSettingsCategory(manager)) {
-                    setManager(previousManager.current);
-                    return;
-                  }
-                  if (workspace !== 'agent' || selected || projectWorkbenchId) setManager('');
-                  else void openMainAgent();
-                }}
-              >
-                <>
-                  <MessageSquare size={14} aria-hidden="true" />
-                  <span className="workspace-return-label">{managerReturnLabel}</span>
-                </>
-              </Button>
-            ) : workspace === 'agent' && layout !== 'chat' ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="workspace-chat-return"
-                aria-label="Back to chat"
-                onClick={() => {
-                  if (selected) chooseLayout('chat');
-                  else void openMainAgent();
-                }}
-              >
-                <MessageSquare size={14} aria-hidden="true" />
-                <span className="workspace-return-label">Back to chat</span>
-              </Button>
-            ) : null}
-            {workspace === 'agent' && !manager && (
-              <>
-                <Button
-                  ref={coordinationToggle}
-                  className="workspace-subagents-toggle"
-                  variant="ghost"
-                  size="sm"
-                  aria-label="Subagents"
-                  aria-describedby="workspace-subagents-summary"
-                  title="Subagents"
-                  aria-controls="workspace-subagents"
-                  aria-expanded={coordinationOpen}
-                  onClick={() => showCoordination(!coordinationOpen)}
-                >
-                  <PanelRight size={16} />
-                  <span className="workspace-subagents-label">Subagents</span>
-                  {(coordinationSummary.active > 0 || coordinationSummary.attention > 0) && (
-                    <span className="workspace-subagents-count" aria-hidden="true">
-                      {coordinationSummary.active || coordinationSummary.attention}
-                    </span>
-                  )}
-                </Button>
-                <span id="workspace-subagents-summary" className="visually-hidden">
-                  {coordinationSummary.active} active, {coordinationSummary.attention} need attention,{' '}
-                  {coordinationSummary.done} done
-                </span>
-              </>
-            )}
-            <div className="workspace-view-actions" role="group" aria-label="Window view">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={fullscreen ? 'Exit full screen' : 'Enter full screen'}
-                title="Toggle window full screen"
-                onClick={() => void toggleFullscreen()}
-              >
-                {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-              </Button>
-            </div>
-            <WorkspaceMenu label="Workspace actions">
-              <div className="workspace-menu-context" role="status">
-                {online ? 'Connected' : 'Offline'}
-                {statusContext ? ' · ' + statusContext : ''}
-              </div>
-              {workspace === 'agent' && (
-                <>
-                  <span className="workspace-menu-label">Chat</span>
-                  <button data-close-menu disabled={registering} onClick={() => openNewChat()}>
-                    <Plus size={16} />
-                    New chat
-                  </button>
-                  <button data-close-menu onClick={() => openNewChatWithOptions()}>
-                    <SlidersHorizontal size={16} />
-                    New chat with options
-                  </button>
-                  <button
-                    data-close-menu
-                    aria-pressed={coordinationOpen}
-                    onClick={() => showCoordination(!coordinationOpen)}
-                  >
-                    <PanelRight size={16} />
-                    Subagents
-                  </button>
-                  <hr />
-                  <span className="workspace-menu-label">Work</span>
-                  <button data-close-menu onClick={() => setManager('projects')}>
-                    <Folder size={16} />
-                    Projects
-                  </button>
-                  <button data-close-menu onClick={() => setManager('overview')}>
-                    <LayoutDashboard size={16} />
-                    Overview
-                  </button>
-                  <button data-close-menu onClick={() => setManager('tasks')}>
-                    <Clock size={16} />
-                    Activity
-                  </button>
-                  <hr />
-                  <span className="workspace-menu-label">Open view</span>
-                  <button
-                    data-close-menu
-                    onClick={() => {
-                      chooseLayout('workbench');
-                      setManager('');
-                    }}
-                  >
-                    <Code2 size={14} />
-                    Files & code
-                  </button>
-                  {(['browser', 'terminal', 'computer', 'artifacts', 'review'] as const).map(view => (
-                    <button key={view} data-close-menu onClick={() => openSurface(view)}>
-                      {
-                        {
-                          browser: <Globe size={14} />,
-                          terminal: <TerminalSquare size={14} />,
-                          computer: <Monitor size={14} />,
-                          artifacts: <Boxes size={14} />,
-                          review: <GitCompareArrows size={14} />,
-                        }[view]
-                      }
-                      {
-                        {
-                          browser: 'Browser',
-                          terminal: 'Terminal',
-                          computer: 'Computer',
-                          artifacts: 'Artifacts',
-                          review: 'Review changes',
-                        }[view]
-                      }
-                    </button>
-                  ))}
-                  <hr />
-                  <span className="workspace-menu-label">Layout</span>
-                  <span className="workspace-menu-label" id="sidebar-behavior-label">
-                    Sidebar
-                  </span>
-                  <div
-                    role="group"
-                    aria-labelledby="sidebar-behavior-label"
-                    className="workspace-menu-choices"
-                  >
-                    {(['pinned', 'collapsed', 'hover'] as const).map(mode => (
-                      <button
-                        key={mode}
-                        data-close-menu
-                        aria-pressed={(sidebarHover ? 'hover' : left ? 'pinned' : 'collapsed') === mode}
-                        onClick={() => setSidebarBehavior(mode)}
-                      >
-                        {{pinned: 'Pinned', collapsed: 'Collapsed', hover: 'Float on hover'}[mode]}
-                      </button>
-                    ))}
-                  </div>
-                  <button data-close-menu onClick={() => setRight(value => !value)}>
-                    <PanelRight size={14} />
-                    Toggle side panel<kbd>{formatShortcut(bindings.right)}</kbd>
-                  </button>
-                  <button data-close-menu onClick={() => setBottom(value => !value)}>
-                    <PanelBottom size={14} />
-                    Toggle bottom panel<kbd>{formatShortcut(bindings.bottom)}</kbd>
-                  </button>
-                  <button data-close-menu onClick={() => setLayoutsOpen(true)}>
-                    <LayoutDashboard size={14} />
-                    Saved layouts
-                  </button>
-                </>
-              )}
-              <hr />
-              {workspace === 'agent' && (isDetachedWindow() || (!nativeWorkspace() && detachedBrowser)) && (
-                <button data-close-menu disabled={!selected || redocking} onClick={() => void redock()}>
-                  Return to main workspace
-                </button>
-              )}
-              {!nativeWorkspace() && (
-                <button data-close-menu onClick={() => void recoverWindows()}>
-                  <Clock size={14} />
-                  Recover unsaved windows
-                </button>
-              )}
-              {workspace === 'agent' && (
-                <button data-close-menu onClick={detach}>
-                  <ExternalLink size={14} />
-                  Detach workspace
-                </button>
-              )}
-              <hr />
-              <button data-close-menu onClick={() => setPalette(true)}>
-                <Command size={16} />
-                Commands
-              </button>
-              <button data-close-menu onClick={() => setManager('safety')}>
-                <Shield size={14} />
-                Action review
-              </button>
-              <button data-close-menu onClick={() => setManager('appearance')}>
-                <Sun size={14} />
-                Appearance
-              </button>
-              <button data-close-menu onClick={() => void beginLock()}>
-                <Lock size={14} />
-                Lock workspace
-              </button>
-            </WorkspaceMenu>
-          </header>
+          <WorkspaceHeader
+            workspace={workspace}
+            studioSection={studioSection}
+            manager={manager}
+            shellManager={shellManager}
+            managerReturnLabel={managerReturnLabel}
+            project={project}
+            projectWorkbenchId={projectWorkbenchId}
+            primaryId={primaryId}
+            mainState={mainState}
+            layout={layout}
+            online={online}
+            statusContext={statusContext}
+            fullscreen={fullscreen}
+            registering={registering}
+            redocking={redocking}
+            left={left}
+            sidebarHover={sidebarHover}
+            bindings={bindings}
+            coordination={coordination}
+            onToggleFullscreen={() => void toggleFullscreen()}
+            onNewChat={() => openNewChat()}
+            onNewChatWithOptions={() => openNewChatWithOptions()}
+            onManager={setManager}
+            onReturnFromManager={() => {
+              if (isSettingsCategory(manager)) {
+                setManager(previousManager.current);
+                return;
+              }
+              if (workspace !== 'agent' || selected || projectWorkbenchId) setManager('');
+              else void openMainAgent();
+            }}
+            onBackToChat={() => {
+              if (selected) chooseLayout('chat');
+              else void openMainAgent();
+            }}
+            onOpenFiles={() => {
+              chooseLayout('workbench');
+              setManager('');
+            }}
+            onOpenSurface={openSurface}
+            onSidebarBehavior={setSidebarBehavior}
+            onToggleSidePanel={() => setRight(value => !value)}
+            onToggleBottomPanel={() => setBottom(value => !value)}
+            onOpenSavedLayouts={() => setLayoutsOpen(true)}
+            onRedock={() => void redock()}
+            onRecoverWindows={() => void recoverWindows()}
+            onDetach={detach}
+            onOpenPalette={() => setPalette(true)}
+          />
           <main id="main-workspace" className="workspace-body">
             <Suspense fallback={<p className="panel-loading">Opening workspace…</p>}>
               <>
                 {manager && manager !== 'workflows' && !isSettingsCategory(manager) && (
-                  <div className={'manager-overlay' + (controlPage ? ' control-overlay' : '')}>
-                    {controlPage ? (
-                      <ControlPlane
-                        key={auth.principal.id}
-                        page={manager as ControlPage}
-                        ownerId={auth.principal.id}
-                        enabled={!locked}
-                        projects={projects}
-                        engines={engines}
-                        providers={providers}
-                        catalogState={catalogState}
-                        configurationState={configurationState}
-                        currentProjectId={project?.id || projectWorkbenchId}
-                        onPage={setManager}
-                        onManage={section => {
-                          setManagerScope('global');
-                          setManager(section);
-                        }}
-                        onRefresh={() => void load()}
-                        onNew={id => openNewChat(id)}
-                        onAddProject={() => setAddProjectOpen(true)}
-                        onOpen={(id, view) => {
-                          navigationIntent.current++;
-                          setProjectWorkbenchId('');
-                          if (id !== selected) setSession(null);
-                          setSelected(id);
-                          setManager('');
-                          chooseLayout(view);
-                        }}
-                        onProject={openProject}
-                      />
-                    ) : manager === 'runners' ? (
-                      <Runners
-                        ownerId={auth.principal.id}
-                        projectId={
-                          managerScope === 'global' ? null : settingsProjectId || project?.id || null
-                        }
-                      />
-                    ) : (
-                      <Managers
-                        section={manager}
-                        projectId={
-                          managerScope === 'global' ? null : settingsProjectId || project?.id || null
-                        }
-                        sessionId={managerScope === 'global' ? null : selected || null}
-                        onSection={section => {
-                          if (section === 'media') setWorkspace('studio');
-                          else setManager(section);
-                        }}
-                        onCapabilitiesChanged={() => void load()}
-                      />
-                    )}
-                    {!controlPage && (
-                      <Button
-                        className="manager-back"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setManager(previousManager.current || 'projects')}
-                      >
-                        Back
-                      </Button>
-                    )}
-                  </div>
+                  <ManagerOverlay
+                    manager={manager}
+                    controlPage={controlPage}
+                    scope={managerScope}
+                    settingsProjectId={settingsProjectId}
+                    project={project}
+                    projectWorkbenchId={projectWorkbenchId}
+                    onPage={setManager}
+                    onManage={section => {
+                      setManagerScope('global');
+                      setManager(section);
+                    }}
+                    onNew={id => openNewChat(id)}
+                    onAddProject={() => setAddProjectOpen(true)}
+                    onOpen={(id, view) => {
+                      navigationIntent.current++;
+                      setProjectWorkbenchId('');
+                      if (id !== selected) setSession(null);
+                      setSelected(id);
+                      setManager('');
+                      chooseLayout(view);
+                    }}
+                    onProject={openProject}
+                    onSection={section => {
+                      if (section === 'media') setWorkspace('studio');
+                      else setManager(section);
+                    }}
+                    onBack={() => setManager(previousManager.current || 'projects')}
+                  />
                 )}
                 {workflowsVisited && (
-                  <div
-                    className="workspace-workflows-host manager-overlay control-overlay"
-                    hidden={workspace !== 'agent' || manager !== 'workflows'}
-                    inert={workspace !== 'agent' || manager !== 'workflows' || locked}
-                  >
-                    <Workflows
-                      key={auth.principal.id}
-                      ownerId={auth.principal.id}
-                      projectId={project?.id || projectWorkbenchId || null}
-                      projects={projects}
-                      sessionId={
-                        session?.id === selected &&
-                        session.mode === 'agent' &&
-                        !session.runner_id &&
-                        session.workflow !== 'browser'
-                          ? session.id
-                          : null
-                      }
-                      runId={workflowRunId}
-                      visible={workspace === 'agent' && manager === 'workflows'}
-                      locked={locked}
-                      onOpenSession={openConversation}
-                      onNavigate={setManager}
-                    />
-                  </div>
+                  <WorkflowsHost
+                    workspace={workspace}
+                    manager={manager}
+                    project={project}
+                    projectWorkbenchId={projectWorkbenchId}
+                    runId={workflowRunId}
+                    onOpenSession={openConversation}
+                    onNavigate={setManager}
+                  />
                 )}
                 <div
                   id="studio-workspace"
@@ -1918,22 +1557,16 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
                         <div className="conversation-home">
                           <OrchestratorStatus
                             presentation="sidebar"
-                            sidebarTarget={coordinationTarget}
-                            selectedTasks={coordinationTasks}
-                            sidebarVisible={coordinationVisible}
-                            onInspectTask={id =>
-                              setInspectedCoordinationTask({
-                                id,
-                                owner: auth.principal.id,
-                                sessionId: selected,
-                              })
-                            }
-                            onSummary={receiveCoordinationSummary}
+                            sidebarTarget={coordination.target}
+                            selectedTasks={coordination.tasks}
+                            sidebarVisible={coordination.visible}
+                            onInspectTask={coordination.inspect}
+                            onSummary={coordination.receiveSummary}
                             quietWhenIdle
                             ownerId={auth.principal.id}
                             selected={selected}
                             enabled={
-                              workspaceActive && (visiblePanels.includes('conversation') || coordinationOpen)
+                              workspaceActive && (visiblePanels.includes('conversation') || coordination.open)
                             }
                             onPrimary={setPrimaryId}
                             onOpen={openConversation}
@@ -2061,66 +1694,21 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
                     }}
                   />
                 </div>
-                <aside
-                  id="workspace-subagents"
-                  ref={coordinationAside}
-                  className="workspace-coordination-sidebar"
-                  aria-label="Subagents"
-                  data-state={coordinationVisible ? 'open' : 'closed'}
-                  hidden={!coordinationVisible && !coordinationRetained}
-                  aria-hidden={!coordinationVisible || undefined}
-                  inert={!coordinationVisible}
-                  onKeyDown={event => {
-                    if (event.key === 'Escape' && !event.defaultPrevented) {
-                      event.preventDefault();
-                      showCoordination(false);
-                    }
-                  }}
-                >
-                  <header className="workspace-coordination-header">
-                    <strong>Subagents</strong>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Close subagents"
-                      onClick={() => showCoordination(false)}
-                    >
-                      <X size={16} />
-                    </Button>
-                  </header>
-                  <div className="workspace-coordination-content" ref={setCoordinationTarget} />
-                </aside>
+                <CoordinationSidebar coordination={coordination} />
               </>
             </Suspense>
           </main>
-          <footer className="status-bar">
-            <Suspense fallback={null}>
-              <CaptureStatus
-                enabled={!locked && auth.principal.scopes.includes('desktop-view')}
-                onOpen={surface => {
-                  setManager('');
-                  chooseLayout(surface);
-                }}
-                onError={report}
-              />
-            </Suspense>
-            <span>
-              <span className={'status-dot ' + (online ? 'completed' : 'failed')} />
-              {online ? 'Connected' : 'Offline'}
-            </span>
-            <span className="status-context" title={statusContextPath}>
-              {statusContext}
-            </span>
-            <span className="flex-spacer" />
-            <button title="Lock workspace" onClick={() => void beginLock()}>
-              <Shield size={12} />
-              Lock
-            </button>
-            <button onClick={() => setPalette(true)}>
-              <Command size={12} />
-              Commands
-            </button>
-          </footer>
+          <StatusBar
+            online={online}
+            context={statusContext}
+            contextPath={statusContextPath}
+            onOpenSurface={surface => {
+              setManager('');
+              chooseLayout(surface);
+            }}
+            onError={report}
+            onOpenPalette={() => setPalette(true)}
+          />
         </div>
         {!locked && (
           <Suspense fallback={null}>
@@ -2133,19 +1721,11 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
             </div>
           </Suspense>
         )}
-        {inspectedCoordinationTask &&
-          inspectedCoordinationTask.owner === auth.principal.id &&
-          inspectedCoordinationTask.sessionId === selected && (
-            <Suspense fallback={null}>
-              <SidebarTaskSupervisor
-                key={auth.principal.id + ':' + inspectedCoordinationTask.id}
-                taskId={inspectedCoordinationTask.id}
-                visible={workspace === 'agent' && !manager && !locked}
-                onClose={() => setInspectedCoordinationTask(null)}
-                onError={report}
-              />
-            </Suspense>
-          )}
+        <InspectedTaskSupervisor
+          coordination={coordination}
+          active={workspace === 'agent' && !manager && !locked}
+          onError={report}
+        />
         {error && (
           <div className="toast error-toast" role="alert">
             <span>{error}</span>
@@ -2155,88 +1735,21 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
           </div>
         )}
         {isSettingsCategory(manager) && !locked && (
-          <SettingsSurface
-            waiting={botsWaiting}
-            key={auth.principal.id + ':' + (auth.host_id || auth.session_id)}
-            scopeKey={
-              projectSettingsCategories.has(canonicalSettingsCategory(manager))
-                ? managerScope + settingsProjectId
-                : 'account'
-            }
-            context={
-              projectSettingsCategories.has(canonicalSettingsCategory(manager)) ? (
-                <label className="settings-scope" data-settings-filter>
-                  Settings apply to
-                  <Select
-                    aria-label="Settings scope"
-                    value={managerScope === 'global' ? '' : settingsProjectId || project?.id || ''}
-                    onChange={event => {
-                      const value = event.target.value;
-                      leaveSettings(() => {
-                        setSettingsProjectId(value);
-                        setManagerScope(value ? 'workspace' : 'global');
-                      });
-                    }}
-                  >
-                    <option value="">Your account and this host</option>
-                    {scopeProjects(projects, settingsProjectId || project?.id || '').map(row => (
-                      <option key={row.id} value={row.id}>
-                        {row.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              ) : (
-                <p className="settings-active-context">{auth.principal.display_name} · This host</p>
-              )
-            }
-            category={canonicalSettingsCategory(manager)}
-            onSelect={setManager}
+          <SettingsHost
+            manager={manager}
+            onSection={setManager}
             onClose={() => setManager(previousManager.current)}
-          >
-            <Suspense fallback={<p>Opening settings…</p>}>
-              {manager === 'characters' ? (
-                <Characters key={auth.principal.id} sessions={sessions} ownerId={auth.principal.id} />
-              ) : canonicalSettingsCategory(manager) === 'preferences' ? (
-                <SettingsGeneral
-                  key={auth.principal.id + ':' + (auth.host_id || auth.session_id)}
-                  account={auth.principal.display_name}
-                  theme={theme}
-                  onTheme={setTheme}
-                  bindings={bindings}
-                  onBindings={setBindings}
-                  onSignOut={signOut}
-                />
-              ) : manager === 'safety' ? (
-                <SafetyManager />
-              ) : manager === 'runners' ? (
-                <Runners
-                  ownerId={auth.principal.id}
-                  projectId={managerScope === 'global' ? null : settingsProjectId || project?.id || null}
-                />
-              ) : (
-                <Managers
-                  embedded
-                  section={manager}
-                  projectId={
-                    projectSettingsCategories.has(canonicalSettingsCategory(manager)) &&
-                    managerScope !== 'global'
-                      ? settingsProjectId || project?.id || null
-                      : null
-                  }
-                  sessionId={
-                    projectSettingsCategories.has(canonicalSettingsCategory(manager)) &&
-                    managerScope !== 'global' &&
-                    (!settingsProjectId || settingsProjectId === project?.id)
-                      ? selected || null
-                      : null
-                  }
-                  onSection={setManager}
-                  onCapabilitiesChanged={() => void load()}
-                />
-              )}
-            </Suspense>
-          </SettingsSurface>
+            scope={managerScope}
+            onScope={setManagerScope}
+            settingsProjectId={settingsProjectId}
+            onSettingsProject={setSettingsProjectId}
+            project={project}
+            waiting={botsWaiting}
+            theme={theme}
+            onTheme={setTheme}
+            bindings={bindings}
+            onBindings={setBindings}
+          />
         )}
         <RecoverWindowsDialog
           open={recoveryOpen}
