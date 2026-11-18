@@ -125,6 +125,7 @@ AUTONOMOUS_BLOCKED_RISKS = frozenset(
 # A sandbox profile neither grants nor limits them, so the envelope check skips
 # them; capability denies and the remembered-rule precedence still apply.
 HOST_MEDIATED_CAPABILITIES = frozenset({"computer.control", "memory.write", "skills.preview", "bot.message"})
+HOST_MEDIATED_CAPABILITIES |= frozenset({"cli.session.start", "cli.session.control"})
 # Capabilities remembered allow rules may never imply by side effect.
 UNGRANTABLE_CAPABILITIES = frozenset(
     {
