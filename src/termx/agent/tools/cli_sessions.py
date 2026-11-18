@@ -123,6 +123,10 @@ def _start_target(call: ProviderCall, ctx: ToolContext):
                 workspace.require(principal, scope, project_id, path)
     else:
         isolation = "none"
+        # A scratch folder has no project grant to check, but a CLI is still a terminal-class power.
+        live = workspace.state.identity.current_principal(principal) if hasattr(workspace.state, "identity") else principal
+        if live is None or "terminal-control" not in live.scopes:
+            raise PermissionError("Starting a CLI session needs the terminal-control scope")
     return spec, prompt, isolation, principal, project_id, path
 
 

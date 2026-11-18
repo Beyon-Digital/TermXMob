@@ -101,7 +101,9 @@ a `status_source`:
   `/api/sessions/{id}/pty`); the session's terminal is claimed for its principal so it
   streams for the owner only. Records are private to their principal; a compatibility
   passcode or device token acts as the single host owner and never sees managed users'
-  sessions.
+  sessions. Starting a CLI always needs `terminal-control`, also from the Main agent's tools
+  and from a task-graph node (agent scopes alone are not enough). The full table of surfaces
+  and scopes is in [remote-access.md](remote-access.md).
 
 ## REST contract
 

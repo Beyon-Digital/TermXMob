@@ -86,6 +86,8 @@ class TaskGraph:
         self._by_cli = {}
         self._indexed = False
         self._cli_listening = None
+        self._listeners = []  # fn(kind, info): the graph's own news for other services (push notifications)
+        self._finished = {}  # main conversation id -> signature of the last finished graph announced
         self._seen = {}  # node id -> time of the newest child event
         self._monitor = None
 
@@ -481,6 +483,14 @@ class TaskGraph:
             self._cli_listening = service
         return service
 
+    def _require_terminal_control(self, principal):
+        """A CLI is a terminal-class power (it runs as the host user): the caller's live scopes must include
+        ``terminal-control``, exactly as for ``POST /api/cli-sessions``. Agent scopes alone are not enough."""
+        identity = getattr(self.workspace.state, 'identity', None)
+        live = identity.current_principal(principal) if identity is not None else principal
+        if live is None or 'terminal-control' not in live.scopes:
+            raise PermissionError('Permission denied: starting a CLI session needs the terminal-control scope')
+
     def cli_launch(self, node):
         """What a CLI node will run, for the approval prompt and the launch alike. Starts nothing."""
         ex = executor_of(node)
@@ -497,6 +507,7 @@ class TaskGraph:
         if service is None:
             return self._fail(node, 'CLI sessions are unavailable on this host')
         try:
+            self._require_terminal_control(principal)
             target = self.cli_launch(node)
             prompt = cli_catalogue.validate_prompt(target['prompt'])
             project_id, path = target['project_id'], target['path']
@@ -623,6 +634,7 @@ class TaskGraph:
         if service is None:
             raise Conflict('CLI sessions are unavailable on this host')
         project_id = node.get('project_id')
+        self._require_terminal_control(principal)
         if project_id:
             self.workspace.require(principal, 'terminal-control', project_id, self.workspace.state.projects.project(project_id)['path'])
         authz = getattr(self.workspace.state, 'authorization', None)
@@ -787,6 +799,8 @@ class TaskGraph:
                     changed.append(self._patch(row['id'], status='cancelled', error=reason, blocked_reason=None))
             self.store.log(principal.id, 'conversation', target['parent_session_id'], 'orchestrator.nodes_cancelled',
                 {'node_id': target['id'], 'count': len(changed)})
+            if changed:
+                self._maybe_finished(changed[-1])
             return self._views(principal.id, target['parent_session_id'], [row['id'] for row in changed])
 
     # -- review ------------------------------------------------------------------
@@ -980,7 +994,34 @@ class TaskGraph:
 
     # -- events ------------------------------------------------------------------
 
+    def add_listener(self, listener):
+        self._listeners.append(listener)
+
+    def _notify(self, kind, info):
+        for listener in list(self._listeners):
+            try:
+                listener(kind, info)
+            except Exception:  # noqa: BLE001 - a listener must never break the graph
+                continue
+
+    def _maybe_finished(self, node):
+        """Tell listeners once when every node of a graph has settled (``orchestrator.report``). Counts only."""
+        rows = self._nodes(node['owner'], node['parent_session_id'])
+        if not rows or any(row['status'] not in ('completed', 'failed', 'cancelled') for row in rows):
+            return
+        signature = hashlib.sha256(json.dumps(sorted((row['id'], row['status'], row['attempts']) for row in rows)).encode()).hexdigest()[:16]
+        if self._finished.get(node['parent_session_id']) == signature:
+            return
+        self._finished[node['parent_session_id']] = signature
+        counts = {status: sum(row['status'] == status for row in rows) for status in ('completed', 'failed', 'cancelled')}
+        self._notify('orchestrator.report', {'owner': node['owner'], 'session_id': node['parent_session_id'], 'counts': counts,
+                                             'total': len(rows), 'signature': signature})
+
     def _transitioned(self, node):
+        self._announce_transition(node)
+        self._maybe_finished(node)
+
+    def _announce_transition(self, node):
         kind, message = {
             'stalled': ('orchestrator.node_stalled', f'"{node["title"]}" has produced no events for {int(self.stall_seconds)} seconds. '
                 'It is still running; wait, message it, cancel it, or reassign it.'),

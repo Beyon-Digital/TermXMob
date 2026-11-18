@@ -142,6 +142,10 @@ including one still planning. **Revoke and stop runs** revokes unattended
 authority and cancels active work. Archiving retains history and does not stop an
 already active run.
 
+The scope each remote surface needs (REST, GraphQL operations and subscriptions, push
+notifications) is listed in the [remote access matrix](remote-access.md). No new scopes were
+added for CLI sessions, durable terminals, host health or task-graph executors.
+
 ## Interactive CLI sessions
 
 The Main agent and remote clients can also run real coding CLIs (`claude`, `codex`,
@@ -241,7 +245,8 @@ engines follow their own supported session-resume contract.
 Live acceptance harnesses run actual hosts and network clients:
 
 - `tests/workspace_remote_control_e2e.py`: independent authenticated clients,
-  disconnect/reconnect, task teams, cancellation, revocation and real Bash PTY.
+  disconnect/reconnect, task teams, cancellation, revocation, real Bash PTY and a CLI session steered by a
+  second client over REST while the first client's subscription reports its status (fake CLI, no browser).
 - `tests/workspace_autonomy_e2e.py`: daemon scheduling and process restart with
   durable state and actual harmless command effects.
 - `tests/workspace_schedules_e2e.py`: rendered desktop schedule controls and
@@ -250,6 +255,9 @@ Live acceptance harnesses run actual hosts and network clients:
   after the initiating browser closes, without a per-run handoff.
 - `tests/workspace_cli_sessions_e2e.py`: a real host and sockets with a fake hook-capable
   CLI (no browser): hook-driven status, the pty websocket, the event subscription and stop.
+- `tests/test_remote_scope_matrix.py`: every CLI, host-status and task-graph surface against its existing
+  scope (401/403/success, managed grants, cross-user isolation); `tests/test_push_delivery.py` and
+  `tests/test_push_event_sources.py`: the push kinds, their authority, limits and sources.
 - `tests/workspace_pty_restart_e2e.py`: real `termx` host processes stopped with SIGTERM and killed
   with SIGKILL and replaced over the same config directory: the same shell process, the replay
   (including output produced while no host ran), a CLI session and its status hook all survive.
