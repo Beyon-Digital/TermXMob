@@ -76,6 +76,11 @@ def _ask(call: ProviderCall, ctx: ToolContext, base: PolicyDecision, *, capabili
     )
 
 
+def ask_start(call: ProviderCall, ctx: ToolContext, base: PolicyDecision, *, key: str) -> PolicyDecision:
+    """The always-ask ``delegation`` decision of ``cli_session_start``, for a task-graph start that launches CLIs."""
+    return _ask(call, ctx, base, capability=START_CAPABILITY, display=f"{call.name} \u00b7 CLI node", key=key)
+
+
 def _allow(call: ProviderCall, ctx: ToolContext, detail: str, *, key: str) -> PolicyDecision:
     base = PolicyDecision(True, False, "Within approved task", detail)
     engine = getattr(ctx, "policy_engine", None)

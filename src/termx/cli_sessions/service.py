@@ -261,9 +261,16 @@ class CliSessionService:
         confirm_bypass: bool = False,
         title: str | None = None,
         claim: Callable[[str], None] | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
+        """Launch one CLI. ``session_id`` lets a caller (the task graph) record its intent under the id before the
+        launch, so a crash in between never leads to a second launch; it must be 32 lowercase hex characters."""
         if self._closed:
             raise CliSessionError(503, "The host is shutting down")
+        if session_id is not None and not re.fullmatch(r"[0-9a-f]{32}", session_id):
+            raise CliSessionError(400, "Invalid session id")
+        if session_id is not None and self.store.get(KIND, session_id) is not None:
+            raise CliSessionError(409, "A CLI session with this id already exists")
         try:
             spec = C.spec_for(cli)
             prompt = C.validate_prompt(prompt)
@@ -281,7 +288,7 @@ class CliSessionService:
             raise CliSessionError(
                 403, "Permission-bypass mode is refused unless the session runs in a restricted sandbox profile and a human confirmed it"
             )
-        session_id = uuid.uuid4().hex
+        session_id = session_id or uuid.uuid4().hex
         working_dir, worktree = await self._prepare_cwd(project_id, cwd, isolation, session_id)
         try:
             session, plan, state_dir, token = self._open_terminal(

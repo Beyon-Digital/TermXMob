@@ -555,7 +555,9 @@ class TaskContext(DictBacked):
 
 @strawberry.type
 class OrchestratorNode(DictBacked):
-    """One task-graph node of the main agent. ``status`` is pending, running, stalled, completed, failed or cancelled."""
+    """One task-graph node of the main agent. ``status`` is pending, running, blocked, stalled, completed, failed or cancelled.
+    ``executor`` is ``{kind: internal | engine | cli, engine?, cli?, mode?, isolation?}``; ``blocked_reason`` is
+    ``needs_approval``, ``waiting_input`` or ``lost`` for a blocked CLI node, ``session_id`` its CLI session or engine conversation."""
 
     id: str
     title: str
@@ -578,6 +580,10 @@ class OrchestratorNode(DictBacked):
     cost_usd: float | None
     created_at: float | None
     updated_at: float | None
+    executor: JSON | None
+    blocked_reason: str | None
+    session_id: str | None
+    resumable: bool | None
 
 
 @strawberry.type

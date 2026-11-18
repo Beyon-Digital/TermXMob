@@ -1219,6 +1219,10 @@ type OrchestratorNode {
   cost_usd: Float
   created_at: Float
   updated_at: Float
+  executor: JSON
+  blocked_reason: String
+  session_id: String
+  resumable: Boolean
 }
 
 type OrchestratorRollup {

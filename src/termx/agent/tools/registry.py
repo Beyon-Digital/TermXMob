@@ -172,7 +172,8 @@ class ToolRegistry:
          "plan_nodes","start_ready","node_status","retry_node","reassign_node","cancel_node",
          "list_bots","bot_status","pause_bot","create_bot","update_bot","resume_bot","delete_bot","assign_bot_task","schedule_bot",
          "list_workflows","get_workflow","save_workflow","validate_workflow","run_workflow","get_workflow_run","cancel_workflow_run",
-         "cli_session_start","cli_session_send","cli_session_read","cli_session_status","cli_session_stop"}
+         "cli_session_start","cli_session_send","cli_session_read","cli_session_status","cli_session_stop",
+         "review_node_changes"}
     )
 
     # Offered only to a bot's task or the main agent's, with the recipients that task may message.
