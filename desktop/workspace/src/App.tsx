@@ -147,6 +147,7 @@ import {
   type CommandInvocation,
 } from './shell/commands';
 import {useShortcuts} from './shell/use-shortcuts';
+import AgentSidebar, {useSidebarState} from './shell/AgentSidebar';
 import AddProjectHost from './shell/dialogs/AddProjectHost';
 import CommandPaletteDialog from './shell/dialogs/CommandPaletteDialog';
 import LayoutsDialog from './shell/dialogs/LayoutsDialog';
@@ -244,21 +245,8 @@ const projectSettingsCategories = new Set([
   'runners',
   'access',
 ]);
+export {sessionListPreview} from './shell/sidebar-rows';
 export {useWorkspaceHistory, useWorkspaceThemeScope, workspaceRoute};
-
-/** Only use content already available in the list or the selected snapshot. */
-export function sessionListPreview(session: Pick<Session, 'draft_text' | 'turns'>): string {
-  const draft = session.draft_text?.replace(/\s+/g, ' ').trim();
-  if (draft) return 'Draft: ' + draft.slice(0, 200);
-  const turn = [...(session.turns || [])].sort((a, b) => b.sequence - a.sequence)[0];
-  return (turn?.task?.result || turn?.prompt || '')
-    .replace(/^\s*(?:`{3,}|~{3,})(?:[a-z][\w+-]*)?\s*$/gim, '')
-    .replace(/^\s*(?:(?:#{1,6}|>|[-*+]|\d+[.)])\s+)+/gm, '')
-    .replace(/`+([^`]+)`+/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 200);
-}
 
 export default function App() {
   return (
@@ -311,7 +299,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     pinProject,
   } = useWorkspaceData();
   const [theme, setTheme] = useTheme(),
-    [query, setQuery] = useState(''),
     [addProjectOpen, setAddProjectOpen] = useState(false),
     [palette, setPalette] = useState(false),
     [incoming, setIncoming] = useState<IncomingContext | null>(null),
@@ -363,17 +350,7 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   useLayoutEffect(() => {
     projectWorkbenchNow.current = projectWorkbenchId;
   });
-  const [sidebarOwner, setSidebarOwner] = useState(''),
-    [searchOpen, setSearchOpen] = useState(false),
-    [sidebarRowHeight, setSidebarRowHeight] = useState(() =>
-      matchMedia('(pointer: coarse)').matches ? 44 : 40,
-    );
-  useEffect(() => {
-    const media = matchMedia('(pointer: coarse)');
-    const changed = () => setSidebarRowHeight(media.matches ? 44 : 40);
-    media.addEventListener('change', changed);
-    return () => media.removeEventListener('change', changed);
-  }, []);
+  const [sidebarOwner, setSidebarOwner] = useState('');
   const [panelActivation, setPanelActivation] = useState<{panel: DockPanel; nonce: number}>(),
     [fullscreen, setFullscreen] = useState(false),
     [fileRequest, setFileRequest] = useState<{
@@ -456,7 +433,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   const botsWaiting = useBotsNeedYouCount(!!auth && workspace !== 'data');
   const [primaryId, setPrimaryId] = useState(''),
     [mainState, setMainState] = useState<'loading' | 'ready' | 'failed'>('loading'),
-    [groupedChats, setGroupedChats] = useState(false),
     [homeRequest, setHomeRequest] = useState(0);
   const primaryFlight = useRef<Promise<Session> | null>(null),
     navigationIntent = useRef(0);
@@ -671,8 +647,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     },
   });
-  const [collapsed, setCollapsed] = useState<string[]>([]),
-    [sessionFilter, setSessionFilter] = useState('all');
   const [bindings, setBindings] = useState<Bindings>({...defaults});
   useEffect(() => {
     const names: Record<string, string> = {
@@ -709,12 +683,10 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     browserCommand = useRef<BrowserCommand | null>(null),
     quickCommand = useRef(false);
   const [quickNonce, setQuickNonce] = useState(0);
-  const sidebarScroll = useRef<HTMLDivElement>(null),
-    searchInput = useRef<HTMLInputElement>(null),
-    project =
-      projects.find(
-        project => project.id === (session ? session.project_id : projectWorkbenchId || projectId),
-      ) || null;
+  const project =
+    projects.find(project => project.id === (session ? session.project_id : projectWorkbenchId || projectId)) ||
+    null;
+  const sidebar = useSidebarState({primaryId, scopeProjectId: project?.id || projectWorkbenchId});
   const studioProject =
     studioProjects.projects.find(row => row.id === studioProjectId) ||
     projects.find(row => row.id === studioProjectId) ||
@@ -834,10 +806,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     if (!auth) return;
     setStudioProjectId('');
     setStudioSection(readStudioSection());
-    try {
-      const groups = JSON.parse(localStorage.getItem('termx-collapsed:' + auth.principal.id) || '[]');
-      if (Array.isArray(groups)) setCollapsed(groups.filter(value => typeof value === 'string'));
-    } catch {}
     setBindings(loadBindings(localStorage.getItem('termx-keybindings:' + auth.principal.id)));
     void load();
     const book = new LayoutPresetStore(auth.principal.id);
@@ -899,9 +867,8 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
   }, [sidebarOwner, sidebarHover, left, auth?.principal.id]);
   function showSearch() {
     setWorkspace('agent');
-    setSearchOpen(true);
+    sidebar.openSearch();
     setLeft(true);
-    requestAnimationFrame(() => searchInput.current?.focus());
   }
   function setSidebarBehavior(value: string) {
     setSidebarHover(value === 'hover');
@@ -1221,97 +1188,9 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     },
   });
   useEffect(() => {
-    if (auth) localStorage.setItem('termx-collapsed:' + auth.principal.id, JSON.stringify(collapsed));
-  }, [collapsed, auth?.principal.id]);
-  useEffect(() => {
     if (auth) localStorage.setItem('termx-keybindings:' + auth.principal.id, JSON.stringify(bindings));
   }, [bindings, auth?.principal.id]);
 
-  const rows = useMemo(() => {
-    const matching = sessions.filter(chat => chat.id !== primaryId);
-    if (!groupedChats)
-      return matching
-        .filter(chat => {
-          const text = [chat.title, projects.find(project => project.id === chat.project_id)?.name]
-              .join(' ')
-              .toLowerCase(),
-            status = chat.id === session?.id ? session.latest_status : chat.latest_status;
-          return (
-            text.includes(query.toLowerCase()) &&
-            (sessionFilter === 'all' ||
-              (sessionFilter === 'attention' && taskState(status || '').attention) ||
-              (sessionFilter === 'running' && taskState(status || '').active))
-          );
-        })
-        .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updated_at - a.updated_at)
-        .map(chat => ({kind: 'session' as const, key: chat.id, chat}));
-    const groups = new Map<string, Session[]>();
-    for (const chat of [...matching].sort(
-      (a, b) => Number(b.pinned) - Number(a.pinned) || b.updated_at - a.updated_at,
-    )) {
-      if (!chat.title.toLowerCase().includes(query.toLowerCase())) continue;
-      const status = chat.id === session?.id ? session.latest_status : chat.latest_status;
-      if (sessionFilter === 'attention' && !taskState(status || '').attention) continue;
-      if (sessionFilter === 'running' && !taskState(status || '').active) continue;
-      const id = (chat.group_id === undefined ? chat.project_id : chat.group_id) || '';
-      groups.set(id, [...(groups.get(id) || []), chat]);
-    }
-    if (sessionFilter === 'all' && !query)
-      for (const item of scopeProjects(projects, project?.id || projectWorkbenchId))
-        if (!groups.has(item.id)) groups.set(item.id, []);
-    return orderProjectGroups([...groups.entries()], projectPins.projects).flatMap(([id, chats]) => [
-      {
-        kind: 'project' as const,
-        key: 'project:' + id,
-        name: projects.find(project => project.id === id)?.name || 'Unassigned',
-        id,
-      },
-      ...(collapsed.includes(id) && !query
-        ? []
-        : chats.map(chat => ({kind: 'session' as const, key: chat.id, chat}))),
-    ]);
-  }, [
-    sessions,
-    projects,
-    query,
-    collapsed,
-    sessionFilter,
-    session?.id,
-    session?.latest_status,
-    projectPins.projects,
-    primaryId,
-    groupedChats,
-    project?.id,
-    projectWorkbenchId,
-  ]);
-  const sidebarPreviews = useMemo(
-    () =>
-      new Map(
-        rows.flatMap(row =>
-          row.kind === 'session'
-            ? [[row.key, sessionListPreview(row.chat.id === session?.id ? session : row.chat)] as const]
-            : [],
-        ),
-      ),
-    [rows, session?.id, session?.turns, session?.draft_text],
-  );
-  const virtual = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => sidebarScroll.current,
-    estimateSize: index => (sidebarPreviews.get(rows[index]?.key) ? 68 : sidebarRowHeight),
-    overscan: 12,
-    getItemKey: index => rows[index].key,
-  });
-  useEffect(() => {
-    virtual.measure();
-  }, [sidebarRowHeight, sidebarPreviews, virtual]);
-  const [narrowViewport, setNarrowViewport] = useState(() => window.matchMedia('(max-width:850px)').matches);
-  useEffect(() => {
-    const media = window.matchMedia('(max-width:850px)'),
-      update = () => setNarrowViewport(media.matches);
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
   const {
     newOpen,
     setNewOpen,
@@ -1338,18 +1217,6 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
     chooseLayout,
     setLeft,
   });
-  async function updateRow(chat: Session, changes: Record<string, unknown>) {
-    try {
-      const latest = await request<Session>('/api/workspace/sessions/' + chat.id + '?turns=false');
-      await request(
-        '/api/workspace/sessions/' + chat.id,
-        json('PATCH', {revision: latest.revision, changes}),
-      );
-      await refresh();
-    } catch (reason) {
-      report(reason);
-    }
-  }
   function resize(event: React.PointerEvent<HTMLDivElement>, region: 'left' | 'right') {
     rememberLayout();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1574,183 +1441,16 @@ function ShellBody({navigation}: {navigation: ShellNavigation}) {
           </div>
           {workspace === 'agent' ? (
             <>
-              <Button
-                variant="ghost"
-                className="nav-action sidebar-new"
-                disabled={registering}
-                aria-busy={registering}
-                onClick={() => openNewChat()}
-              >
-                <Plus size={16} />
-                New chat
-              </Button>
-              <Button
-                variant="ghost"
-                aria-label="Main agent"
-                aria-current={!manager && selected === primaryId ? 'page' : undefined}
-                className={
-                  'nav-action sidebar-primary' + (!manager && selected === primaryId ? ' selected' : '')
-                }
-                onClick={() => void openMainAgent()}
-              >
-                <Home size={16} aria-hidden="true" />
-                <span>Main agent</span>
-              </Button>
-              <div className="sidebar-section-heading">
-                <span>Recent chats</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Find a conversation"
-                  title="Find a conversation"
-                  onClick={showSearch}
-                >
-                  <Search size={16} />
-                </Button>
-                <WorkspaceMenu label="Conversation filters" icon={<SlidersHorizontal size={16} />}>
-                  <span className="workspace-menu-label">Conversations</span>
-                  <label>
-                    State
-                    <Select
-                      aria-label="Conversation state filter"
-                      value={sessionFilter}
-                      onChange={event => setSessionFilter(event.target.value)}
-                    >
-                      <option value="all">All conversations</option>
-                      <option value="running">Running</option>
-                      <option value="attention">Needs attention</option>
-                    </Select>
-                  </label>
-                  <label>
-                    Arrange chats
-                    <Select
-                      aria-label="Arrange chats"
-                      value={groupedChats ? 'projects' : 'recent'}
-                      onChange={event => setGroupedChats(event.target.value === 'projects')}
-                    >
-                      <option value="recent">By recent activity</option>
-                      <option value="projects">Group by project</option>
-                    </Select>
-                  </label>
-                  <Button variant="ghost" data-close-menu onClick={() => setArchived(value => !value)}>
-                    <Archive size={16} />
-                    {archived ? 'Show recent' : 'Show archived'}
-                  </Button>
-                </WorkspaceMenu>
-              </div>
-              {(searchOpen || query) && (
-                <Input
-                  ref={searchInput}
-                  className="workspace-search"
-                  aria-label="Search conversations"
-                  placeholder="Find a conversation…"
-                  value={query}
-                  onChange={event => setQuery(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Escape') {
-                      setQuery('');
-                      setSearchOpen(false);
-                      event.stopPropagation();
-                    }
-                  }}
-                />
-              )}
-              <div className="sidebar-scroll" ref={sidebarScroll}>
-                <div className="session-list" style={{height: virtual.getTotalSize()}}>
-                  {virtual.getVirtualItems().map(item => {
-                    const row = rows[item.index];
-                    return (
-                      <div
-                        key={row.key}
-                        style={{
-                          position: 'absolute',
-                          height: item.size,
-                          transform: `translateY(${item.start}px)`,
-                          width: '100%',
-                        }}
-                      >
-                        {row.kind === 'project' ? (
-                          <ProjectGroup
-                            id={row.id}
-                            name={row.name}
-                            collapsed={collapsed.includes(row.id)}
-                            pinned={projectPins.projects.includes(row.id)}
-                            busy={!pinsReady || !!pinBusy}
-                            onSelect={() => {
-                              setProjectId(row.id);
-                              setCollapsed(old =>
-                                old.includes(row.id) ? old.filter(id => id !== row.id) : [...old, row.id],
-                              );
-                            }}
-                            onPin={() => void pinProject(row.id)}
-                          />
-                        ) : (
-                          <div
-                            className={'session-row ' + (selected === row.chat.id ? 'selected' : '')}
-                            data-has-preview={!!sidebarPreviews.get(row.key)}
-                          >
-                            <button
-                              aria-current={selected === row.chat.id && !manager ? 'page' : undefined}
-                              onClick={() => openConversation(row.chat.id)}
-                            >
-                              <span className="session-row-copy">
-                                <span className="session-row-title">
-                                  {row.chat.title || 'Untitled conversation'}
-                                </span>
-                                {sidebarPreviews.get(row.key) && (
-                                  <span className="session-row-preview">{sidebarPreviews.get(row.key)}</span>
-                                )}
-                              </span>
-                              {(row.chat.id === session?.id
-                                ? session.latest_status
-                                : row.chat.latest_status) && (
-                                <span
-                                  className={
-                                    'status-dot ' +
-                                    (row.chat.id === session?.id
-                                      ? session.latest_status
-                                      : row.chat.latest_status)
-                                  }
-                                  title={(row.chat.id === session?.id
-                                    ? session.latest_status
-                                    : row.chat.latest_status
-                                  )?.replaceAll('_', ' ')}
-                                />
-                              )}{' '}
-                              {row.chat.pinned && <Pin size={11} />}
-                            </button>
-                            <div className="row-actions">
-                              <button
-                                aria-label={'Pin ' + row.chat.title}
-                                onClick={() => updateRow(row.chat, {pinned: !row.chat.pinned})}
-                              >
-                                <Pin size={12} />
-                              </button>
-                              <button
-                                aria-label={'Archive ' + row.chat.title}
-                                onClick={() => updateRow(row.chat, {archived: !row.chat.archived})}
-                              >
-                                <Archive size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {!rows.length && (
-                  <p className="sidebar-empty">
-                    {sessionsState === 'loading'
-                      ? 'Loading conversations…'
-                      : sessionsState === 'failed'
-                        ? 'Conversations unavailable. Use Refresh in Commands to retry.'
-                        : query
-                          ? 'No matching conversations.'
-                          : 'Your other chats will appear here.'}
-                  </p>
-                )}
-              </div>
+              <AgentSidebar
+                sidebar={sidebar}
+                primaryId={primaryId}
+                manager={manager}
+                creating={registering}
+                onNewChat={() => openNewChat()}
+                onOpenMainAgent={() => void openMainAgent()}
+                onOpenConversation={openConversation}
+                onFindConversation={showSearch}
+              />
             </>
           ) : workspace === 'data' ? (
             <div className="data-sidebar-host" ref={setDataSidebarHost} />
