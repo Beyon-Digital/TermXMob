@@ -1908,7 +1908,7 @@ class AgentManager:
                 grant['run_id']==task_id and not grant['revoked'] and grant['expires_at']>time()
                 for grant in self.browser.records.list('grant')))
             if active_browser:
-                broker_tools={'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
+                broker_tools={'browser_tabs','browser_observe','browser_action','browser_open_tab','browser_close_tab','browser_wait_for_handoff','browser_sites_list','browser_site_note_read','list_files','read_file','write_file','apply_patch','search_project','preview_list'}
                 for item in group:
                     if item.call.type!='function' or item.call.name not in broker_tools:
                         raise PermissionError('Restricted browser task cannot run process or desktop tools; take over all granted tabs before resuming coding execution')

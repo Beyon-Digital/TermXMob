@@ -164,6 +164,36 @@ otherwise they overlap nowhere and the task is refused. A refusal emits
 `desktop.app_blocked`. Desktop time for a run is kept on the run's task, survives
 a restart, and ends the call that reaches it.
 
+### Saved sites
+
+Users and agents can pin frequently used sites. A saved site belongs to one user,
+one browser profile and one origin (`https://host[:port]`), opens as a normal
+`tab` or as an `app` (a persistent window that reopens at its last page after a
+host restart, lazily, because Chromium needs a live host), and keeps notes and a
+usage score. The score (frecency) is a visit count with a 14 day half-life; a
+browsing session counts once, queries and fragments are never stored, private
+tabs and temporary profiles leave no trace, and origins visited three or more
+times but not saved are offered as suggestions (the counter is bounded per user).
+Clearing a profile resets its usage and suggestions; deleting a profile removes
+its sites and notes.
+
+Routes under `/api/browser/sites` use the existing browser scopes: reads need
+`desktop-view`, writes and opening need `desktop-control`. `GET/POST /sites`,
+`PATCH/DELETE /sites/{id}`, `POST /sites/{id}/open` (returns `{site, tab, reused}`;
+the tab is human-owned), `GET/POST/DELETE /sites/{id}/notes` (delete takes
+`?note_id=`) and `GET /sites/suggestions`. The GraphQL subscription
+`browser_site_events` streams `browser.site.upserted`, `browser.site.visited` and
+`browser.site.removed` for the caller's sites.
+
+Agent tools: `browser_sites_list` and `browser_site_note_read` (read, no approval),
+`browser_site_pin` (write, policy), `browser_site_open` (asks, names the origin;
+the tab it opens grants the agent no control, so acting in it still needs the
+task handoff above) and `browser_site_note_write` (asks every time and shows the
+exact text; notes are capped at 2000 characters, 50 per site, refuse credentials,
+and are returned to agents marked as untrusted data). `BrowserService.on_visit`
+is an optional callback called once per counted visit with the user, project,
+profile, origin, title and query-free URL, for usage history.
+
 ## Restart behavior and live verification
 
 Schedule definitions, run reservations, task IDs and events are durable. Restart
