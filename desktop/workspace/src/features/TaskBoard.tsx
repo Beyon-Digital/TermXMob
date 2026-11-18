@@ -7,14 +7,18 @@ import {FormField} from '../components/ui/form-field';
 import {Select} from '../components/ui/select';
 import {usePolling} from '../lib/use-polling';
 import {
-  STATUS_LABEL, boardChanges, canCancel, canReassign, canRetry, canStart, cancelNode, depths, elapsedLabel, loadBoard, loadModelChoices, nodeElapsed,
-  outOfAttempts, reassignNode, retryNode, rollupCounts, rollupUsage, startReadyNodes, type Board, type BoardNode, type BoardRollup, type ModelChoice,
+  STATUS_LABEL, blockedNote, blockedShort, boardChanges, canCancel, canReassign, canResumeSession, canRetry, canStart, cancelNode, cliSessionOf, depths, elapsedLabel,
+  executorChip, loadBoard, loadModelChoices, nodeElapsed, outOfAttempts, reassignNode, retryNode, rollupCounts, rollupUsage, startReadyNodes, type Board, type BoardNode,
+  type BoardRollup, type ModelChoice,
 } from '../lib/orchestrator-board';
+import {useOpenCliSession} from './cli/open-cli-context';
 import './task-board.css';
+import './task-board-executors.css';
 
-type Action = 'start' | 'retry' | 'reassign' | 'cancel';
+type Action = 'start' | 'retry' | 'reassign' | 'cancel' | 'open';
 /** Wording for one action while it runs and when it fails; the success message names the same verb. */
 const COPY: Record<Action, {pending: string; next: string}> = {
+  open: {pending: 'Opening…', next: 'Open the CLI session from the Agents view.'},
   start: {pending: 'Starting…', next: 'Refresh the board to see its current state, then try again. The main agent also starts ready tasks on its own.'},
   retry: {pending: 'Retrying…', next: 'Refresh the board to see its current state, then try again or reassign it to another model.'},
   reassign: {pending: 'Reassigning…', next: 'Pick a model from the list and try again, or refresh the board to see its current state.'},
@@ -25,11 +29,12 @@ const message = (reason: unknown) => (reason instanceof Error ? reason.message :
 const triggerId = (nodeId: string) => `task-menu-${nodeId}-trigger`;
 const choiceValue = (providerId: string | null, model: string | null) => providerId && model ? JSON.stringify([providerId, model]) : '';
 
-function RowMenu({node, open, disabled, onToggle, onClose, onPick}: {node: BoardNode; open: boolean; disabled: boolean; onToggle: () => void; onClose: () => void; onPick: (action: Action) => void}) {
+function RowMenu({node, open, disabled, canOpen, onToggle, onClose, onPick}: {node: BoardNode; open: boolean; disabled: boolean; canOpen: boolean; onToggle: () => void; onClose: () => void; onPick: (action: Action) => void}) {
   const wrapper = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const items: {action: Action; label: string}[] = [
+    ...(canOpen && cliSessionOf(node) ? [{action: 'open' as const, label: 'Open CLI session'}] : []),
     ...(canStart(node) ? [{action: 'start' as const, label: 'Start ready tasks'}] : []),
-    ...(canRetry(node) ? [{action: 'retry' as const, label: 'Retry task'}] : []),
+    ...(canRetry(node) ? [{action: 'retry' as const, label: canResumeSession(node) ? 'Resume session' : 'Retry task'}] : []),
     ...(canReassign(node) ? [{action: 'reassign' as const, label: 'Reassign model'}] : []),
     ...(canCancel(node) ? [{action: 'cancel' as const, label: 'Cancel task'}] : []),
   ];
@@ -95,6 +100,7 @@ export default function TaskBoard({enabled, onSummary}: {enabled: boolean; onSum
   const [choices, setChoices] = useState<ModelChoice[] | null>(null), [choicesError, setChoicesError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0), [restoreFocus, setRestoreFocus] = useState<string | null>(null);
   const busy = useRef(new Set<string>()), latest = useRef<Board | null>(null);
+  const openCli = useOpenCliSession();
 
   // Each board refresh also moves `now`, so elapsed labels stay current without a second timer.
   // A change the polling found (a task failed, stalled or started waiting on you) is announced as well as shown.
@@ -148,8 +154,9 @@ export default function TaskBoard({enabled, onSummary}: {enabled: boolean; onSum
     return dependents ? `Cancelled “${node.title}” and ${dependents} ${dependents === 1 ? 'task that depends' : 'tasks that depend'} on it.` : `Cancelled “${node.title}”.`;
   };
   const pick = (node: BoardNode, action: Action) => {
-    if (action === 'start') void run(node, action, () => startReadyNodes(), () => 'Started the tasks that were ready.');
-    else if (action === 'retry') void run(node, action, () => retryNode(node.id), () => `Retried “${node.title}”.`);
+    if (action === 'open') { const id = cliSessionOf(node); if (id) openCli?.(id); }
+    else if (action === 'start') void run(node, action, () => startReadyNodes(), () => 'Started the tasks that were ready.');
+    else if (action === 'retry') void run(node, action, () => retryNode(node.id), () => canResumeSession(node) ? `Resumed “${node.title}”.` : `Retried “${node.title}”.`);
     else if (action === 'cancel') void run(node, action, () => cancelNode(node.id), next => cancelled(node, next));
     else void openReassign(node);
   };
@@ -173,18 +180,21 @@ export default function TaskBoard({enabled, onSummary}: {enabled: boolean; onSum
         {nodes.map(node => {
           const action = pending[node.id], elapsed = nodeElapsed(node, now), stalled = node.status === 'stalled';
           const waiting = node.status === 'pending' && node.blocked_by.length > 0;
+          const chip = executorChip(node), blocked = node.status === 'blocked', session = cliSessionOf(node);
           return <li key={node.id} className="task-row" aria-label={node.title} aria-busy={action ? true : undefined} data-status={node.status} style={{'--depth': Math.min(levels.get(node.id) || 0, 4)} as CSSProperties}>
             <div className="task-row-main">
               <span className="task-dot" aria-hidden="true" data-status={node.status} data-live={node.status === 'running' || undefined}/>
               <span className="task-title">{node.title}</span>
-              {stalled ? <Badge variant="secondary" className="task-stalled">Stalled</Badge> : <span className="task-status">{STATUS_LABEL[node.status] || node.status}</span>}
+              {stalled ? <Badge variant="secondary" className="task-stalled">Stalled</Badge> : <span className="task-status" data-status={node.status}>{STATUS_LABEL[node.status] || node.status}{blocked && blockedShort(node) ? ` · ${blockedShort(node)}` : ''}</span>}
+              <Badge variant="outline" className="task-chip task-exec" title={chip.title}>{chip.label}</Badge>
               {node.model && <Badge variant="secondary" className="task-chip" title={node.provider_id ? `${node.model} on ${node.provider_id}` : node.model}>{node.model}</Badge>}
               {elapsed && <span className="task-elapsed">{elapsed}</span>}
-              <RowMenu node={node} open={menuFor === node.id && !action} disabled={!!action} onToggle={() => setMenuFor(menuFor === node.id ? null : node.id)} onClose={() => setMenuFor(null)} onPick={choice => pick(node, choice)}/>
+              <RowMenu node={node} open={menuFor === node.id && !action} disabled={!!action} canOpen={!!openCli} onToggle={() => setMenuFor(menuFor === node.id ? null : node.id)} onClose={() => setMenuFor(null)} onPick={choice => pick(node, choice)}/>
             </div>
             {action && <p className="task-note" role="status">{COPY[action].pending}</p>}
             {(waiting || node.depends_on.length > 0) && <p className="task-note">{waiting ? `Waiting for ${names(node.blocked_by)}` : `Depends on ${names(node.depends_on)}`}</p>}
             {node.waiting && <p className="task-note">{WAITING_NOTE[node.waiting]}</p>}
+            {blocked && <p className="task-note task-blocked">{blockedNote(node)}{session && openCli && <>{' '}<Button size="sm" variant="ghost" onClick={() => openCli(session)}>Open CLI session</Button></>}</p>}
             {stalled && node.last_event_at != null && <p className="task-note">No updates for {elapsedLabel(now - node.last_event_at).toLowerCase()}. Retry it, reassign it to another model, or cancel it.</p>}
             {node.error && <p className="task-note task-error">{node.error}</p>}
             {node.status === 'completed' && node.result_summary && <p className="task-note task-summary">{node.result_summary}</p>}

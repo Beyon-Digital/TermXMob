@@ -36,11 +36,15 @@ export type OrchestratorSnapshot = {
 };
 export type CoordinationSidebarSummary = {
   hasContent: boolean; loading: boolean; active: number; attention: number; done: number; plans: number; stale: boolean;
+  /** Planned tasks blocked on a person (a CLI session waiting for input or approval, or lost and resumable). Counted apart from sub-agents. */
+  blocked?: number;
 };
 type Props = {
   ownerId: string; selected: string; enabled: boolean; onOpen: (id: string) => void;
   onPrimary?: (id: string) => void; onRefresh?: () => void; quietWhenIdle?: boolean;
   selectedTasks?: Task[]; sidebarVisible?: boolean; onInspectTask?: (id: string) => void;
+  /** Draw the sub-agents as one compact list (the new layout's Agents view). */
+  compact?: boolean;
   presentation?: 'inline'|'sidebar'; sidebarTarget?: HTMLElement|null; onSummary?: (summary: CoordinationSidebarSummary) => void;
 };
 
@@ -96,10 +100,10 @@ function ChildControlBanner({child, busy, disabled, detailsScope, detailsActive,
 /** How often the collapsed header re-reads the plan graph: quickly while work is live, slowly when nothing is planned or running. */
 export const COLLAPSED_BOARD_LIVE_MS = 4000, COLLAPSED_BOARD_IDLE_MS = 15000, PLAN_EVENT_DEBOUNCE_MS = 300;
 /** A plan with nodes that are running, waiting to run, or stalled is still changing. */
-export const boardIsLive = (board: BoardRollup | null) => !!board && ['running', 'pending', 'stalled'].some(status => (board.counts[status] || 0) > 0);
+export const boardIsLive = (board: BoardRollup | null) => !!board && ['running', 'pending', 'stalled', 'blocked'].some(status => (board.counts[status] || 0) > 0);
 
 /** The primary chat owns coordination; inspecting a child never starts work. */
-export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, onPrimary, onRefresh, quietWhenIdle = false, presentation = 'inline', sidebarTarget = null, onSummary, selectedTasks, sidebarVisible = false, onInspectTask}: Props) {
+export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, onPrimary, onRefresh, quietWhenIdle = false, presentation = 'inline', sidebarTarget = null, onSummary, selectedTasks, sidebarVisible = false, onInspectTask, compact = false}: Props) {
   const observing = useObservationActive(enabled);
   const [snapshot, setSnapshot] = useState<OrchestratorSnapshot | null>(null), [receivedOwner, setReceivedOwner] = useState('');
   const [expanded, setExpanded] = useState(false), [error, setError] = useState(''), [readError, setReadError] = useState('');
@@ -203,8 +207,8 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   const summary = useMemo<CoordinationSidebarSummary>(() => ({
     hasContent: children.length > 0 || (board?.total || 0) > 0,
     loading: !current && !failure, active: children.length - finished, attention: needsAttention.length,
-    done: finished, plans: board?.total || 0, stale: isStale,
-  }), [ownerId, children.length, finished, needsAttention.length, !!current, failure, board?.total, isStale]);
+    done: finished, plans: board?.total || 0, stale: isStale, ...(board?.counts.blocked ? {blocked: board.counts.blocked} : {}),
+  }), [ownerId, children.length, finished, needsAttention.length, !!current, failure, board?.total, board?.counts.blocked, isStale]);
   const summaryCallback = useRef(onSummary); summaryCallback.current = onSummary;
   useEffect(() => {if (!ordinarySession && !resolvingSession) summaryCallback.current?.(summary);}, [summary, ordinarySession, resolvingSession]);
   // Sidebar navigation is global; inline coordination stays scoped to Main and its children.
@@ -214,7 +218,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
   // decision readers mounted so work, plans and failures can surface immediately.
   const quiet = quietWhenIdle && !!current && !child && !expanded && !failure && !isStale &&
     !children.length && board !== null && board.total === 0 && !botReports && !current.children_truncated;
-  if (ordinarySession || resolvingSession) return <>{resolvingSession && failure && <div className="orchestrator-error" role="alert"><span>{failure}</span><Button variant="ghost" size="sm" disabled={!observing} onClick={() => void refresh()}>Refresh status</Button></div>}<SessionTaskSubagents key={ownerId + ':' + selected} ownerId={ownerId} sessionId={selected} tasks={selectedTasks || []} visible={sidebarVisible} enabled={observing && ordinarySession} resolving={resolvingSession && !failure} target={sidebarTarget} onSummary={onSummary} onInspectTask={onInspectTask}/></>;
+  if (ordinarySession || resolvingSession) return <>{resolvingSession && failure && <div className="orchestrator-error" role="alert"><span>{failure}</span><Button variant="ghost" size="sm" disabled={!observing} onClick={() => void refresh()}>Refresh status</Button></div>}<SessionTaskSubagents key={ownerId + ':' + selected} ownerId={ownerId} sessionId={selected} tasks={selectedTasks || []} visible={sidebarVisible} enabled={observing && ordinarySession} resolving={resolvingSession && !failure} target={sidebarTarget} onSummary={onSummary} onInspectTask={onInspectTask} compact={compact}/></>;
   if (presentation === 'sidebar') return <>
     <section className={'orchestrator-status' + (child ? ' orchestrator-child-view' : '')} data-presentation="sidebar" aria-label="Main agent coordination">
       {child && <ChildControlBanner child={child} detailsScope={detailsScope} detailsActive={detailsActive} busy={busy === child.session_id} disabled={!!busy || isStale || !observing} onMain={() => {if (primary) onOpen(primary.id);}} onChange={() => void changeControl(child)}/>}
@@ -222,7 +226,7 @@ export default function OrchestratorStatus({ownerId, selected, enabled, onOpen, 
       {!child && needsAttention.length > 0 && <div className="orchestrator-sidebar-attention" role="status"><CircleAlert size={16} aria-hidden="true"/><span>{needsAttention.length} {needsAttention.length === 1 ? 'subagent needs' : 'subagents need'} attention</span><Button variant="ghost" size="sm" onClick={() => onOpen(needsAttention[0].session_id)}>Open chat</Button></div>}
       {!child && primary && selected === primary.id && <OrchestratorDecisions ownerId={ownerId} children={children} enabled={observing && !isStale} onRefresh={() => {void refresh(); onRefresh?.();}}/>}
     </section>
-    {sidebarTarget && createPortal(<CoordinationSidebar ownerId={ownerId} children={children} selected={selected} loading={!current && !failure} stale={isStale} error={failure} enabled={observing && !busy} truncated={current?.children_truncated} board={board} boardError={boardError} planOpen={planExpanded} onPlanOpenChange={setExpanded} activity={recent} onOpen={onOpen}
+    {sidebarTarget && createPortal(<CoordinationSidebar ownerId={ownerId} children={children} selected={selected} loading={!current && !failure} stale={isStale} error={failure} enabled={observing && !busy} truncated={current?.children_truncated} board={board} boardError={boardError} compact={compact} planOpen={planExpanded} onPlanOpenChange={setExpanded} activity={recent} onOpen={onOpen}
       onRefresh={() => {setError(''); setReadError(''); setPlanTick(value => value + 1); void refresh();}}
       planContent={<TaskBoard key={ownerId} enabled={observing && !isStale} onSummary={value => {setBoard(value); setBoardError('');}}/>}/>, sidebarTarget)}
   </>;

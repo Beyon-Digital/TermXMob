@@ -1,6 +1,11 @@
 import {gql} from './api';
 import {formatCost, formatTokens} from './agentic';
 
+/** Who does a node's work. A node stored before executors existed reads as `internal`. */
+export interface NodeExecutor {kind: 'internal' | 'engine' | 'cli'; engine?: string; cli?: string; mode?: string; isolation?: string}
+/** Why a node is `blocked`: it waits on a person, not on a dependency. */
+export type BlockedReason = 'needs_approval' | 'waiting_input' | 'lost';
+
 /** One task-graph node as GraphQL `orchestrator_board` reports it. Missing cost or time is null, never zero. */
 export interface BoardNode {
   id: string; title: string; role: string; depends_on: string[]; blocked_by: string[];
@@ -10,12 +15,19 @@ export interface BoardNode {
   last_event_at: number | null; result_summary: string; error: string;
   provider_id: string | null; model: string | null; tokens: number; cost_usd: number | null;
   created_at: number | null; updated_at: number | null;
+  /** Absent on a host from before executors, which reads as internal. */
+  executor?: NodeExecutor | null;
+  blocked_reason?: BlockedReason | null;
+  /** The node's CLI session (or engine conversation) id. */
+  session_id?: string | null;
+  /** A lost CLI session whose own conversation can be resumed. */
+  resumable?: boolean | null;
 }
 export interface BoardRollup {total: number; counts: Record<string, number>; percent_complete: number; tokens: number; cost_usd: number | null}
 export interface Board {nodes: BoardNode[]; rollup: BoardRollup}
 export interface ModelChoice {provider_id: string; provider: string; models: string[]}
 
-const BOARD = 'nodes{id title role depends_on blocked_by task_id status attempts max_attempts waiting last_event_at result_summary error provider_id model tokens cost_usd created_at updated_at} rollup{total counts percent_complete tokens cost_usd}';
+const BOARD = 'nodes{id title role depends_on blocked_by task_id status attempts max_attempts waiting last_event_at result_summary error provider_id model tokens cost_usd created_at updated_at executor blocked_reason session_id resumable} rollup{total counts percent_complete tokens cost_usd}';
 const NODE_ACTION = (name: string, extra = '', input = '') => `mutation($id:String!${extra}){${name}(node_id:$id${input}){${BOARD}}}`;
 
 export async function loadBoard(): Promise<Board> {
@@ -46,8 +58,8 @@ export async function loadModelChoices(): Promise<ModelChoice[]> {
     .map(row => ({provider_id: row.id, provider: row.name || row.id, models: row.models as string[]}));
 }
 
-export const STATUS_LABEL: Record<string, string> = {pending: 'Waiting', running: 'Running', stalled: 'Stalled', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled'};
-const SUMMARY_ORDER = ['running', 'stalled', 'pending', 'failed', 'completed', 'cancelled'];
+export const STATUS_LABEL: Record<string, string> = {pending: 'Waiting', running: 'Running', blocked: 'Blocked', stalled: 'Stalled', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled'};
+const SUMMARY_ORDER = ['running', 'blocked', 'stalled', 'pending', 'failed', 'completed', 'cancelled'];
 
 /** Counts in a fixed order, skipping statuses with none. */
 export function rollupCounts(rollup: BoardRollup) {
@@ -56,7 +68,7 @@ export function rollupCounts(rollup: BoardRollup) {
 /** One line for the Delegated work header, so it agrees with the board it sits above. */
 export function rollupHeadline(rollup: BoardRollup) {
   const count = (status: string) => rollup.counts[status] || 0;
-  const attention = count('failed') + count('stalled'), running = count('running');
+  const attention = count('failed') + count('stalled') + count('blocked'), running = count('running');
   if (attention) return `${attention} planned ${attention === 1 ? 'task needs' : 'tasks need'} attention`;
   if (running) return `${running} planned ${running === 1 ? 'task' : 'tasks'} in progress`;
   return `${count('completed')} of ${rollup.total} planned ${rollup.total === 1 ? 'task' : 'tasks'} done`;
@@ -67,11 +79,37 @@ export function rollupUsage(rollup: BoardRollup) {
 }
 
 const RETRYABLE = ['failed', 'stalled', 'cancelled'];
-/** Running or stalled: the node has a task that may still produce output. */
-export const isActive = (node: BoardNode) => node.status === 'running' || node.status === 'stalled';
-export const canRetry = (node: BoardNode) => RETRYABLE.includes(node.status) && node.attempts < node.max_attempts;
-export const canReassign = (node: BoardNode) => ['pending', ...RETRYABLE].includes(node.status);
-export const canCancel = (node: BoardNode) => ['pending', 'running', 'stalled', 'failed'].includes(node.status);
+/** Running, blocked or stalled: the node has a task or a live session that may still produce output. */
+export const isActive = (node: BoardNode) => node.status === 'running' || node.status === 'stalled' || node.status === 'blocked';
+/** A blocked node whose CLI session was lost with the host: Retry resumes the CLI's own saved conversation instead of launching again. */
+export const canResumeSession = (node: BoardNode) => node.status === 'blocked' && node.blocked_reason === 'lost' && !!node.resumable;
+export const canRetry = (node: BoardNode) => canResumeSession(node) || (RETRYABLE.includes(node.status) && node.attempts < node.max_attempts);
+/** Only an internal node runs on a model provider; engine and CLI nodes refuse a reassignment. */
+export const executorKind = (node: BoardNode) => node.executor?.kind ?? 'internal';
+export const canReassign = (node: BoardNode) => executorKind(node) === 'internal' && ['pending', ...RETRYABLE].includes(node.status);
+export const canCancel = (node: BoardNode) => ['pending', 'running', 'blocked', 'stalled', 'failed'].includes(node.status);
+/** The CLI session tab a node can open, or `null`. */
+export const cliSessionOf = (node: BoardNode) => (executorKind(node) === 'cli' && node.session_id ? node.session_id : null);
+
+/** The chip for who does the work: "Agent", "Engine: codex", "CLI: claude". The tooltip adds the mode and isolation. */
+export function executorChip(node: BoardNode): {label: string; title: string} {
+  const executor = node.executor ?? {kind: 'internal' as const};
+  const detail = [executor.mode, executor.isolation].filter(Boolean).join(', ');
+  if (executor.kind === 'engine') return {label: 'Engine: ' + (executor.engine ?? 'unknown'), title: 'Runs on a coding engine' + (detail ? ' (' + detail + ')' : '')};
+  if (executor.kind === 'cli') return {label: 'CLI: ' + (executor.cli ?? 'unknown'), title: 'Runs in an interactive CLI session' + (detail ? ' (' + detail + ')' : '')};
+  return {label: 'Agent', title: 'Runs as an Internal Agent task'};
+}
+
+const BLOCKED_NOTE: Record<string, string> = {
+  needs_approval: 'Blocked: the CLI session needs your approval. Open the session and answer in its terminal.',
+  waiting_input: 'Blocked: the CLI session is waiting for your input. Open the session to reply.',
+  lost: 'Blocked: the CLI session was lost when the host stopped. Resume it to pick up its saved conversation.',
+};
+const BLOCKED_SHORT: Record<string, string> = {needs_approval: 'needs approval', waiting_input: 'waiting for input', lost: 'session lost'};
+/** The sentence under a blocked node, or `''` when it is not blocked. */
+export const blockedNote = (node: BoardNode) => (node.status === 'blocked' ? (BLOCKED_NOTE[node.blocked_reason ?? ''] ?? 'Blocked: this task is waiting on you.') : '');
+/** "needs approval", "waiting for input" or "session lost", for the status text beside the badge. */
+export const blockedShort = (node: BoardNode) => (node.status === 'blocked' ? (BLOCKED_SHORT[node.blocked_reason ?? ''] ?? '') : '');
 export const outOfAttempts = (node: BoardNode) => RETRYABLE.includes(node.status) && node.attempts >= node.max_attempts;
 
 /** Indent level = longest chain of dependencies above the node. Unknown ids and cycles stop the walk. */
@@ -119,6 +157,7 @@ export function boardChanges(previous: Board | null, next: Board): string[] {
     if (!old) continue;
     if (node.status === 'failed' && old.status !== 'failed') notes.push(`“${node.title}” failed.`);
     else if (node.status === 'stalled' && old.status !== 'stalled') notes.push(`“${node.title}” has stalled.`);
+    else if (node.status === 'blocked' && (old.status !== 'blocked' || old.blocked_reason !== node.blocked_reason)) notes.push(`“${node.title}” is blocked: ${blockedShort(node) || 'it needs you'}.`);
     else if (node.waiting && node.waiting !== old.waiting && WAITING_TEXT[node.waiting]) notes.push(`“${node.title}” ${WAITING_TEXT[node.waiting]}.`);
   }
   if (next.rollup.total > 0 && next.rollup.percent_complete === 100 && previous.rollup.percent_complete < 100) notes.push('All tasks are complete.');

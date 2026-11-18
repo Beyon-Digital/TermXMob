@@ -29,10 +29,12 @@ type Props = {
   error: string; enabled: boolean; truncated?: boolean; board: BoardRollup | null; boardError: string;
   planOpen: boolean; onPlanOpenChange: (open: boolean) => void; planContent: ReactNode;
   activity: OrchestratorActivity[]; onOpen: (id: string) => void; onRefresh: () => void;
+  /** One list with no Active / Done headings or counts, for the Agents view in the new layout, which has its own Sub-agents heading. */
+  compact?: boolean;
 };
 
 function AgentGroup({label, rows, selected, limit, onMore, onOpen}: {
-  label: 'Active'|'Done'; rows: CoordinationSidebarItem[]; selected: string; limit: number;
+  label: 'Active'|'Done'|'All'; rows: CoordinationSidebarItem[]; selected: string; limit: number;
   onMore: () => void; onOpen: (id: string) => void;
 }) {
   const group = useRef<HTMLElement>(null), revealFocus = useRef<number|null>(null);
@@ -44,8 +46,8 @@ function AgentGroup({label, rows, selected, limit, onMore, onOpen}: {
     if (target && !target.closest('[hidden],[inert]')) target.focus();
   }, [limit]);
   return <section ref={group} className="coordination-agent-group" aria-label={label + ' subagents'}>
-    <h3>{label}<span>{rows.length}</span></h3>
-    {!rows.length ? <p className="coordination-group-empty">{label === 'Active' ? 'No active subagents' : 'No finished subagents'}</p> : <ul>
+    {label === 'All' ? <h3 className="visually-hidden">Subagents</h3> : <h3>{label}<span>{rows.length}</span></h3>}
+    {!rows.length ? <p className="coordination-group-empty">{label === 'All' ? 'No sub-agents yet.' : label === 'Active' ? 'No active subagents' : 'No finished subagents'}</p> : <ul>
       {rows.slice(0, limit).map((child, index) => {
         const status = !child.task_id && child.status === 'idle' ? 'Not started' : taskState(child.status).label;
         const label = child.title || 'Untitled subagent';
@@ -65,7 +67,7 @@ function AgentGroup({label, rows, selected, limit, onMore, onOpen}: {
 }
 
 /** Presentation only: the parent owns the single coordination observer and board. */
-export default function CoordinationSidebar({ownerId, children, items, showPlans = true, note, truncatedNote, selected, loading, stale, error, enabled, truncated, board, boardError, planOpen, onPlanOpenChange, planContent, activity, onOpen, onRefresh}: Props) {
+export default function CoordinationSidebar({ownerId, children, items, showPlans = true, note, truncatedNote, selected, loading, stale, error, enabled, truncated, board, boardError, planOpen, onPlanOpenChange, planContent, activity, onOpen, onRefresh, compact = false}: Props) {
   const [activeLimit, setActiveLimit] = useState(10), [doneLimit, setDoneLimit] = useState(10);
   const root = useRef<HTMLDivElement>(null), focusedAgent = useRef<string|null>(null), focusOwner = useRef(ownerId);
   if (focusOwner.current !== ownerId) {focusOwner.current = ownerId; focusedAgent.current = null;}
@@ -81,17 +83,21 @@ export default function CoordinationSidebar({ownerId, children, items, showPlans
   const ordered = [...rows].sort((a, b) => Number(subagentNeedsAttention(b)) - Number(subagentNeedsAttention(a)) || b.updated_at - a.updated_at || a.id.localeCompare(b.id));
   const active = ordered.filter(child => !subagentFinished(child)), done = ordered.filter(subagentFinished);
   return <div ref={root} onFocus={event => {const row = (event.target as HTMLElement).closest<HTMLElement>('[data-subagent-id]'); focusedAgent.current = row?.dataset.subagentId || null;}} onBlur={() => {focusedAgent.current = null;}} className="coordination-sidebar" aria-label="Subagent activity" aria-busy={loading || undefined}>
-    {note && <p className="coordination-sidebar-note">{note}</p>}
+    {note && !compact && <p className="coordination-sidebar-note">{note}</p>}
     {loading ? <p className="coordination-sidebar-note" role="status">Loading subagents…</p> : <>
       {(stale || error) && <div className="coordination-sidebar-notice"><p>{rows.length ? 'Updates interrupted. Showing the last received agents.' : 'Subagents could not be loaded.'}</p><Button variant="ghost" size="sm" disabled={!enabled} onClick={onRefresh}><RefreshCw size={14}/>Refresh subagents</Button></div>}
       {!enabled && <p className="coordination-sidebar-note" role="status">Updates paused</p>}
-      <AgentGroup label="Active" rows={active} selected={selected} limit={activeLimit} onMore={() => setActiveLimit(value => value + 10)} onOpen={onOpen}/>
-      <AgentGroup label="Done" rows={done} selected={selected} limit={doneLimit} onMore={() => setDoneLimit(value => value + 10)} onOpen={onOpen}/>
+      {compact
+        ? <AgentGroup label="All" rows={[...active, ...done]} selected={selected} limit={activeLimit} onMore={() => setActiveLimit(value => value + 10)} onOpen={onOpen}/>
+        : <>
+          <AgentGroup label="Active" rows={active} selected={selected} limit={activeLimit} onMore={() => setActiveLimit(value => value + 10)} onOpen={onOpen}/>
+          <AgentGroup label="Done" rows={done} selected={selected} limit={doneLimit} onMore={() => setDoneLimit(value => value + 10)} onOpen={onOpen}/>
+        </>}
       {truncated && <p className="coordination-sidebar-note">{truncatedNote || 'Showing up to 100 subagents. Other conversations remain in chat history.'}</p>}
     </>}
     {showPlans && <Collapsible className="coordination-sidebar-plans" open={planOpen} onOpenChange={onPlanOpenChange}>
-      <CollapsibleTrigger className="coordination-plan-trigger"><GitBranch size={16} aria-hidden="true"/><span>Plans</span>{board && <small>{board.total}</small>}<ChevronRight size={16} aria-hidden="true"/></CollapsibleTrigger>
-      {!planOpen && board && board.total > 0 && <p className="coordination-plan-summary">{rollupHeadline(board)}</p>}
+      <CollapsibleTrigger className="coordination-plan-trigger"><GitBranch size={16} aria-hidden="true"/><span>Plans</span>{board && !compact && <small>{board.total}</small>}<ChevronRight size={16} aria-hidden="true"/></CollapsibleTrigger>
+      {!planOpen && board && board.total > 0 && !compact && <p className="coordination-plan-summary">{rollupHeadline(board)}</p>}
       {!planOpen && boardError && <p className="coordination-sidebar-note">Plan updates unavailable. Open Plans to retry.</p>}
       <CollapsibleContent className="coordination-plan-content">{planOpen && planContent}</CollapsibleContent>
     </Collapsible>}
