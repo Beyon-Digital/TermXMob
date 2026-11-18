@@ -329,6 +329,10 @@ using the [Python SDK](https://agentclientprotocol.com/libraries/python).
 
 ### Anthropic API (Claude) accounts
 
+In **Settings > Models & engines**, choose **Add provider account > Provider > Anthropic (Claude)**, or
+**Edit account** on a saved one: the key is write-only (the page shows **Key saved** and **Replace key**), the
+request format is fixed, and **Test connection** asks for confirmation before it lists the account's models.
+
 An API account of kind `anthropic` drives the **TermX internal** engine through
 the native Messages API (streaming, tool use, prompt caching and adaptive
 thinking) next to the OpenAI Responses and Chat Completions accounts. Save it
