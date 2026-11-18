@@ -1,0 +1,83 @@
+/* The host health popover in the status bar. Tokens only. */
+@layer legacy, primitives, shell, surfaces;
+
+@layer surfaces {
+  .host-popover {
+    width: 360px;
+    max-width: calc(100vw - var(--space-16));
+    padding: var(--space-12) var(--space-16);
+  }
+
+  .host-status {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    color: var(--text);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+    white-space: normal;
+  }
+
+  .host-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-8);
+    margin: 0;
+  }
+
+  .host-title small,
+  .host-sub {
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    line-height: var(--line-xs);
+  }
+
+  .host-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-8) var(--space-12);
+    margin: 0;
+  }
+
+  .host-facts dt {
+    color: var(--text-2);
+  }
+
+  .host-facts dd {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .host-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-8);
+    margin: 0;
+    color: var(--danger);
+  }
+
+  .host-alert svg {
+    flex: none;
+    margin-top: var(--space-4);
+  }
+
+  .host-note {
+    margin: 0;
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    line-height: var(--line-sm);
+  }
+
+  .host-link {
+    align-self: flex-start;
+  }
+
+  .status-health-button {
+    padding-left: var(--space-4);
+  }
+}
