@@ -13,12 +13,12 @@ import {BufferProvider, useBuffers} from '../features/editor/buffer-store';
 import {openFileTab} from '../features/editor/file-navigation';
 import ExplorerView from '../features/explorer/ExplorerView';
 import SearchView from '../features/search/SearchView';
+import {ScmView, diffRef, useBranchStatus} from '../features/scm';
 import {signOut} from '../lib/api';
 import {allTabs, type SideBarView} from '../lib/layout/model';
 import {focusedTab} from '../lib/layout/reduce';
 import {phoneStack} from '../lib/layout/rects';
 import type {useSessionChanges} from '../lib/session-changes';
-import {useGitStatus} from '../lib/use-git-status';
 import {useHostName} from '../lib/use-host-name';
 import {useAuth} from './AuthGate';
 import type {SidebarState} from './AgentSidebar';
@@ -33,7 +33,6 @@ import type {WorkspaceNavigation} from './use-workspace-navigation';
 import AgentsView from './views/AgentsView';
 import DataView from './views/DataView';
 import SitesView from './views/SitesView';
-import SourceControlView from './views/SourceControlView';
 import StudioView from './views/StudioView';
 import {useNeedsYouItems} from './views/use-needs-you';
 import {useWorkspaceData} from './WorkspaceDataProvider';
@@ -104,7 +103,7 @@ function Frame(props: Props) {
   const project = nav.project;
   const view = phone ? drawerView : book.sideBar.view;
   const focused = focusedTab(book);
-  const git = useGitStatus(project, !props.locked);
+  const git = useBranchStatus(project, !props.locked);
   const hostName = useHostName(!props.locked);
   const needs = useNeedsYouItems(!props.locked && view === 'agents' && (phone ? drawer : book.sideBar.visible));
   const attention = props.botsWaiting + coordination.summary.attention;
@@ -195,11 +194,13 @@ function Frame(props: Props) {
         return <SearchView project={project} session={session} onOpenFile={openFile} onError={report} />;
       case 'scm':
         return (
-          <SourceControlView
+          <ScmView
+            project={project}
+            session={session}
             source={changesSource}
-            branch={git?.branch}
+            onOpenDiff={(path, side) => dispatch({type: 'openTab', kind: 'diff', ref: diffRef(side, path)})}
             onOpenFile={path => openFile(path)}
-            onReview={() => dispatch({type: 'openTab', kind: 'diff'})}
+            onCheckoutChanged={refresh}
           />
         );
       case 'sites':
@@ -300,7 +301,7 @@ function Frame(props: Props) {
           online={props.online}
           hostName={hostName}
           branch={git?.branch}
-          dirty={!!git?.files.length}
+          dirty={git?.dirty}
           problems={problems}
           needYou={attention}
           mainAgent={mainStatus}
@@ -358,7 +359,7 @@ function Frame(props: Props) {
               <div
                 className="drawer-body"
                 onClick={event => {
-                  const hit = (event.target as HTMLElement).closest('.session-row > button, .tree-row, .search-hit, .scm-row, .main-agent-row, .view-primary');
+                  const hit = (event.target as HTMLElement).closest('.session-row > button, .tree-row, .search-hit, .scm-file-main, .main-agent-row, .view-primary');
                   if (hit) setDrawer(false);
                 }}
               >

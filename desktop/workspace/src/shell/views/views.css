@@ -1,7 +1,6 @@
 /* Side bar view content: sections, headings, 36px rows, empty states. Tokens only. One primary button per view. */
 @layer shell {
-  .agents-view,
-  .scm-view {
+  .agents-view {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -130,28 +129,6 @@
     padding: 0 var(--space-12);
   }
 
-  .scm-head {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .scm-list {
-    flex: 1;
-    overflow-y: auto;
-  }
-  .scm-row {
-    min-height: var(--ide-row-h);
-    border-radius: 0;
-  }
-  .scm-letter {
-    flex: none;
-    color: var(--text-2);
-    font-size: var(--text-xs);
-    font-weight: 500;
-  }
-  .scm-counts {
-    font-variant-numeric: tabular-nums;
-  }
   .data-sidebar-host,
   .studio-sidebar-context {
     display: flex;

@@ -73,13 +73,14 @@ export const LIMITS = {
 } as const;
 
 /**
- * Kinds that can have several tabs at once, one per `ref`: a file tab per open file (`ref` is the buffer key) and a terminal
- * tab per shell (`ref` is the PTY session id). Every other kind is a singleton, because its host is one component with its
+ * Kinds that can have several tabs at once, one per `ref`: a file tab per open file (`ref` is the buffer key), a terminal
+ * tab per shell (`ref` is the PTY session id) and a diff tab per file side (`ref` is `staged:path` or `worktree:path`).
+ * Every other kind is a singleton, because its host is one component with its
  * own state: Chat follows the selected conversation (hosting one Chat per conversation would duplicate its subscriptions
  * and drafts), the browser keeps its own inner tabs, and so on. Opening a singleton that is already open reveals it. The
  * reducer and the validator support multi-instance kinds fully (the reducer takes the set as an option).
  */
-export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal']);
+export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal', 'diff']);
 
 /** Kinds that belong in the bottom panel by default. */
 const PANEL_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['terminal', 'problems', 'preview', 'debug']);

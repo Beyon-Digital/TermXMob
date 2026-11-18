@@ -1,4 +1,5 @@
 import type {DockPanel} from '../lib/docking';
+import type {ChangeStep, ScmCommand} from '../features/scm/scm-bus';
 import type {SideBarView} from '../lib/layout/model';
 import {settingsCategories} from '../lib/settings-categories';
 import type {Layout} from '../lib/use-layout';
@@ -54,6 +55,9 @@ export interface CommandActions {
   detachWorkspace: () => void;
   returnToMain: () => void;
   recoverWindows: () => void;
+  /** Source control (the new layout): commit, stage everything or refresh in the view, and step between changes in the focused diff. */
+  scmCommand: (command: ScmCommand) => void;
+  changeStep: (step: ChangeStep) => void;
 }
 
 export type CommandSource = 'shortcut' | 'palette';
@@ -83,6 +87,7 @@ export type CommandCategory =
   | 'View'
   | 'Layout'
   | 'Chat'
+  | 'Source control'
   | 'Terminal'
   | 'Browser'
   | 'Window'
@@ -351,6 +356,24 @@ const specs = keyed({
     leavesManager: true,
     run: a => a.showView('scm'),
   },
+  nextChange: {
+    title: 'Go to next change',
+    category: 'Source control',
+    defaultKeys: 'F7',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'diff hunk next change review',
+    run: a => a.changeStep('next'),
+  },
+  previousChange: {
+    title: 'Go to previous change',
+    category: 'Source control',
+    defaultKeys: 'Shift+F7',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'diff hunk previous change review',
+    run: a => a.changeStep('previous'),
+  },
   settings: {
     title: 'Open Settings',
     category: 'Settings',
@@ -530,6 +553,45 @@ const treeOnly: Command[] = [
     keywords: 'creative image video cinema music',
     leavesManager: true,
     run: a => a.showView('studio'),
+  },
+  {
+    id: 'scm-commit',
+    title: 'Commit staged changes',
+    category: 'Source control',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'git commit message stage source control',
+    leavesManager: true,
+    run: a => {
+      a.showView('scm');
+      a.scmCommand('commit');
+    },
+  },
+  {
+    id: 'scm-stage-all',
+    title: 'Stage all changes',
+    category: 'Source control',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'git add stage everything source control',
+    leavesManager: true,
+    run: a => {
+      a.showView('scm');
+      a.scmCommand('stageAll');
+    },
+  },
+  {
+    id: 'scm-refresh',
+    title: 'Refresh source control',
+    category: 'Source control',
+    when: 'agent',
+    engine: 'tree',
+    keywords: 'git status reload changes',
+    leavesManager: true,
+    run: a => {
+      a.showView('scm');
+      a.scmCommand('refresh');
+    },
   },
   {
     id: 'move-tab-other-group',

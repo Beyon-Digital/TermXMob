@@ -3,13 +3,11 @@ import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {expectNoAxeViolations} from '../../test-axe';
 import type {NeedsYouItem} from '../../lib/bot-schedules';
-import type {SessionChangesSource} from '../../lib/session-changes';
 import {writeSidebarSprite} from '../../lib/sidebar-sprite';
 import type {Coordination} from '../use-coordination';
 import AgentsView from './AgentsView';
 import DataView from './DataView';
 import SitesView from './SitesView';
-import SourceControlView from './SourceControlView';
 
 vi.mock('../AgentSidebar', () => ({default: ({listOnly}: {listOnly?: boolean}) => <div data-testid="chat-list" data-list-only={String(!!listOnly)} />}));
 vi.mock('./MainAgentSprite', () => ({default: () => <span data-testid="sprite" />}));
@@ -105,61 +103,6 @@ describe('AgentsView', () => {
   it('has no axe violations', async () => {
     const {container} = agents({needs: [item('1', 'Approve the deploy')]});
     await expectNoAxeViolations(container);
-  });
-});
-
-function source(extra: Partial<SessionChangesSource> = {}): SessionChangesSource {
-  return {
-    scope: 's',
-    available: true,
-    unavailableReason: null,
-    error: null,
-    loading: false,
-    refresh: async () => {},
-    data: {
-      repo: true,
-      branch: 'main',
-      head: 'abc',
-      additions: 3,
-      deletions: 1,
-      counts_complete: true,
-      truncated: false,
-      files: [
-        {path: 'src/api.ts', status: 'modified', index: ' ', worktree: 'M', staged: false, untracked: false, additions: 2, deletions: 1},
-        {path: 'notes.md', status: 'added', index: '?', worktree: '?', staged: false, untracked: true, additions: 1, deletions: 0},
-      ] as never,
-    },
-    ...extra,
-  };
-}
-
-describe('SourceControlView', () => {
-  it('lists the changed files read only, with a letter and counts, and opens one', async () => {
-    const user = userEvent.setup();
-    const onOpenFile = vi.fn();
-    const onReview = vi.fn();
-    const {container} = render(<SourceControlView source={source()} branch="main" onOpenFile={onOpenFile} onReview={onReview} />);
-    const list = screen.getByRole('list', {name: 'Changed files'});
-    const rows = within(list).getAllByRole('button');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent('src/api.ts');
-    expect(rows[0]).toHaveTextContent('modified');
-    expect(rows[0]).toHaveTextContent('+2 −1');
-    expect(container.querySelectorAll('.button-primary')).toHaveLength(0);
-    await user.click(rows[1]);
-    expect(onOpenFile).toHaveBeenCalledWith('notes.md');
-    await user.click(screen.getByRole('button', {name: 'Review changes'}));
-    expect(onReview).toHaveBeenCalled();
-    await expectNoAxeViolations(container);
-  });
-
-  it('says so when there is nothing to show', () => {
-    const {rerender} = render(<SourceControlView source={source({data: {...source().data!, files: []}})} onOpenFile={vi.fn()} onReview={vi.fn()} />);
-    expect(screen.getByText('No changes in this checkout.')).toBeInTheDocument();
-    rerender(<SourceControlView source={source({available: false, unavailableReason: 'Choose a conversation to review its changes.'})} onOpenFile={vi.fn()} onReview={vi.fn()} />);
-    expect(screen.getByText('Choose a conversation to review its changes.')).toBeInTheDocument();
-    rerender(<SourceControlView source={source({data: {...source().data!, repo: false}})} onOpenFile={vi.fn()} onReview={vi.fn()} />);
-    expect(screen.getByText('This folder is not a git repository.')).toBeInTheDocument();
   });
 });
 

@@ -19,8 +19,8 @@ const layoutOf = (state: LayoutState) => state.book.current;
 const ofKind = (state: LayoutState, kind: TabKind) => allTabs(layoutOf(state)).filter(tab => tab.kind === kind);
 
 describe('multi-instance kinds', () => {
-  it('are files and terminals; chat stays a singleton', () => {
-    expect([...MULTI_INSTANCE_KINDS].sort()).toEqual(['file', 'terminal']);
+  it('are files, terminals and diffs; chat stays a singleton', () => {
+    expect([...MULTI_INSTANCE_KINDS].sort()).toEqual(['diff', 'file', 'terminal']);
     expect(MULTI_INSTANCE_KINDS.has('chat')).toBe(false);
   });
 
