@@ -8,6 +8,7 @@ import {
   type CommandContext,
   type CommandInvocation,
 } from './commands';
+import {requestChangeStep, requestScmCommand} from '../features/scm/scm-bus';
 import {isDetachedWindow, nativeWorkspace} from '../lib/native';
 import {detachedBrowser} from '../lib/window-journal';
 import {useAuth} from './AuthGate';
@@ -118,6 +119,8 @@ export function useShellCommands(options: Options) {
     detachWorkspace: options.detachWorkspace,
     returnToMain: options.returnToMain,
     recoverWindows: options.recoverWindows,
+    scmCommand: requestScmCommand,
+    changeStep: requestChangeStep,
   };
 
   function runCommand(command: Command, invocation: CommandInvocation) {

@@ -202,7 +202,6 @@ export default function TabGroups(props: TabGroupsProps) {
       role="region"
       data-phone={phone || undefined}
       data-dragging={drag.state ? '' : undefined}
-      aria-label={label}
     >
       {phone
         ? strips(phoneGroup, phoneRects.groups.phone, true)

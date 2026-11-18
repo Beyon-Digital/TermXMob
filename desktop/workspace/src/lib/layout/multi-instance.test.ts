@@ -19,8 +19,8 @@ const layoutOf = (state: LayoutState) => state.book.current;
 const ofKind = (state: LayoutState, kind: TabKind) => allTabs(layoutOf(state)).filter(tab => tab.kind === kind);
 
 describe('multi-instance kinds', () => {
-  it('are files, terminals, CLI sessions and browser tabs; chat stays a singleton', () => {
-    expect([...MULTI_INSTANCE_KINDS].sort()).toEqual(['browser', 'cli', 'file', 'terminal']);
+  it('are files, terminals, CLI sessions, browser tabs and diffs; chat stays a singleton', () => {
+    expect([...MULTI_INSTANCE_KINDS].sort()).toEqual(['browser', 'cli', 'diff', 'file', 'terminal']);
     expect(MULTI_INSTANCE_KINDS.has('chat')).toBe(false);
   });
 
@@ -116,6 +116,47 @@ describe('terminal tabs', () => {
     const clash = run(state, {type: 'setRef', tab: loose.id, ref: 'pty-1'});
     expect(findTab(layoutOf(clash), loose.id)).toBeUndefined();
     expect(ofKind(clash, 'terminal').map(tab => tab.ref)).toEqual(['pty-1', 'pty-2']);
+  });
+});
+
+describe('diff tabs', () => {
+  it('holds one tab per file side, so the staged and unstaged diffs of a file are two tabs', () => {
+    const state = run(
+      initialState(),
+      {type: 'openTab', kind: 'diff', ref: 'worktree:src/a.ts'},
+      {type: 'openTab', kind: 'diff', ref: 'staged:src/a.ts'},
+      {type: 'openTab', kind: 'diff', ref: 'worktree:src/a.ts'},
+      {type: 'openTab', kind: 'diff', ref: 'worktree:src/b.ts'},
+    );
+    expect(ofKind(state, 'diff').map(tab => tab.ref).sort()).toEqual(['staged:src/a.ts', 'worktree:src/a.ts', 'worktree:src/b.ts']);
+    expect(ofKind(state, 'diff')).toHaveLength(3);
+    expect(editorGroups(layoutOf(state).root)[0].tabs.filter(tab => tab.kind === 'diff')).toHaveLength(3);
+  });
+
+  it('reveals the diff that is open instead of adding a copy, and Changes without a file reveals one that is open', () => {
+    const state = run(initialState(), {type: 'openTab', kind: 'diff', ref: 'worktree:a.ts'}, {type: 'openTab', kind: 'diff', ref: 'worktree:b.ts'});
+    const first = ofKind(state, 'diff')[0];
+    const again = run(state, {type: 'openTab', kind: 'diff', ref: 'worktree:a.ts'});
+    expect(ofKind(again, 'diff')).toHaveLength(2);
+    expect(layoutOf(again).focus).toBe(findTab(layoutOf(again), first.id)!.group.id);
+    expect(ofKind(run(again, {type: 'openTab', kind: 'diff'}), 'diff')).toHaveLength(2);
+  });
+
+  it('lets a Changes tab opened with no file take the first file asked for, and keeps its id when it moves', () => {
+    const empty = run(initialState(), {type: 'openTab', kind: 'diff'});
+    const loose = ofKind(empty, 'diff')[0];
+    const filled = run(empty, {type: 'setRef', tab: loose.id, ref: 'staged:a.ts'});
+    expect(ofKind(filled, 'diff').map(tab => [tab.id, tab.ref])).toEqual([[loose.id, 'staged:a.ts']]);
+    const split = run(filled, {type: 'splitGroup', group: findTab(layoutOf(filled), loose.id)!.group.id, dir: 'row', side: 'after', tab: loose.id});
+    expect(findTab(layoutOf(split), loose.id)!.tab.id).toBe(loose.id);
+    expect(editorGroups(layoutOf(split).root)).toHaveLength(2);
+  });
+
+  it('reopens a closed diff tab with its file', () => {
+    let state = run(initialState(), {type: 'openTab', kind: 'diff', ref: 'worktree:a.ts'});
+    state = run(state, {type: 'closeTab', tab: ofKind(state, 'diff')[0].id});
+    state = run(state, {type: 'reopenTab'});
+    expect(ofKind(state, 'diff').map(tab => tab.ref)).toEqual(['worktree:a.ts']);
   });
 });
 

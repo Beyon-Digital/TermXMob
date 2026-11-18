@@ -3,6 +3,7 @@ import {Button} from '../components/ui/button';
 import ControlPlane, {type ControlPage} from '../features/ControlPlane';
 import CliTab from '../features/cli/CliTab';
 import FileTab from '../features/editor/FileTab';
+import {DiffTab} from '../features/scm';
 import ProblemsTab from '../features/editor/ProblemsTab';
 import TerminalTab from '../features/terminal/TerminalTab';
 import type {Project} from '../lib/api';
@@ -30,7 +31,6 @@ const Debugger = lazy(() => import('../features/Debugger'));
 /** The tab kinds whose content is one of the seven Agent panels, and which panel. */
 const PANEL_OF_KIND: Partial<Record<TabKind, DockPanel>> = {
   chat: 'conversation',
-  diff: 'review',
   browser: 'browser',
   computer: 'computer',
   artifacts: 'artifacts',
@@ -121,6 +121,8 @@ export default function TabContent({tab, visible, host}: Props) {
       return <TerminalTabHost tab={tab} visible={visible} host={host} />;
     case 'cli':
       return <CliTabHost tab={tab} visible={visible} host={host} />;
+    case 'diff':
+      return <DiffTabHost tab={tab} visible={visible} host={host} />;
     case 'problems':
       return <ProblemsTab project={host.project} onOpenFile={host.openFile} />;
     case 'preview':
@@ -255,6 +257,22 @@ function CliTabHost({tab, visible, host}: {tab: Tab; visible: boolean; host: Tab
       onClose={() => host.closeTab(tab)}
       onOpenSession={id => host.dispatch({type: 'openTab', kind: 'cli', ref: id})}
       onError={report}
+    />
+  );
+}
+
+/** One file's diff. A diff tab opened without a file takes the first changed one, so its `ref` is attached here. */
+function DiffTabHost({tab, visible, host}: {tab: Tab; visible: boolean; host: TabHost}) {
+  const {session} = useWorkspaceData();
+  return (
+    <DiffTab
+      tabRef={tab.ref}
+      visible={visible}
+      project={host.project}
+      session={session}
+      onOpenFile={path => host.openFile(path)}
+      onRetarget={ref => host.dispatch({type: 'setRef', tab: tab.id, ref})}
+      onClose={() => host.closeTab(tab)}
     />
   );
 }

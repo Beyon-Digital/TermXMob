@@ -74,14 +74,15 @@ export const LIMITS = {
 
 /**
  * Kinds that can have several tabs at once, one per `ref`: a file tab per open file (`ref` is the buffer key), a terminal
- * tab per shell (`ref` is the PTY session id), a CLI tab per CLI session (`ref` is the session id) and a browser tab per
+ * tab per shell (`ref` is the PTY session id), a CLI tab per CLI session (`ref` is the session id), a browser tab per
  * built-in browser tab (`ref` is the browser tab id; a browser tab with no `ref` is the whole browser, with its own inner
- * tabs, as before). Every other kind is a singleton, because its host is one component with its own state: Chat follows the
- * selected conversation (hosting one Chat per conversation would duplicate its subscriptions and drafts), and so on.
+ * tabs, as before) and a diff tab per file side (`ref` is `staged:path` or `worktree:path`). Every other kind is a
+ * singleton, because its host is one component with its own state: Chat follows the selected conversation (hosting one
+ * Chat per conversation would duplicate its subscriptions and drafts), and so on.
  * Opening a singleton that is already open reveals it. The reducer and the validator support multi-instance kinds fully
  * (the reducer takes the set as an option).
  */
-export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal', 'cli', 'browser']);
+export const MULTI_INSTANCE_KINDS: ReadonlySet<TabKind> = new Set<TabKind>(['file', 'terminal', 'cli', 'browser', 'diff']);
 
 /**
  * The multi-instance kinds whose tab with no `ref` is only a placeholder (an empty Editor, a Terminal that has not found its

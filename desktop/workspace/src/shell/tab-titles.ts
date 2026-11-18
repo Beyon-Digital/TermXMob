@@ -1,4 +1,5 @@
 import {KIND_LABEL} from '../components/shell/tab-meta';
+import {diffTitle} from '../features/scm/diff-ref';
 import type {Tab} from '../lib/layout/model';
 
 type Facts = {
@@ -31,6 +32,8 @@ export function tabTitle(tab: Tab, facts: Facts): string {
       if (!buffer) return tab.ref ? keyFileName(tab.ref) : KIND_LABEL.file;
       return fileName(buffer.path) + (buffer.recovered ? ' (recovered copy)' : '');
     }
+    case 'diff':
+      return diffTitle(tab.ref);
     case 'terminal': {
       const index = facts.tabs.filter(item => item.kind === 'terminal').findIndex(item => item.id === tab.id);
       return index > 0 ? KIND_LABEL.terminal + ' ' + (index + 1) : KIND_LABEL.terminal;
