@@ -41,7 +41,8 @@ TOKEN_PREFIX = "clihook_"
 RATE_LIMIT = (120, 10.0)
 
 CLAUDE_EVENTS: dict[str, str | None] = {
-    "SessionStart": None,
+    # Ready at its prompt; with an argv prompt UserPromptSubmit follows within moments and takes over.
+    "SessionStart": S.WAITING_INPUT,
     "UserPromptSubmit": S.WORKING,
     "PostToolUse": S.WORKING,
     "PermissionRequest": S.NEEDS_APPROVAL,
@@ -178,29 +179,39 @@ class HookTokens:
 
 
 FORWARDER_SOURCE = '''\
-"""TermX CLI-session hook forwarder. Posts one hook event to the host and always exits 0."""
+"""TermX CLI-session hook forwarder: posts a minimal status hint to the host and always exits 0.
+
+The CLI's event JSON can carry prompts, tool inputs and replies; only the event-name fields are forwarded.
+"""
+import json
 import os
 import sys
 import urllib.request
+
+KEEP = ("hook_event_name", "notification_type", "type")
 
 
 def main():
     url = os.environ.get("TERMX_CLI_HOOK_URL")
     if not url:
         return
-    data = b""
     last = sys.argv[-1] if len(sys.argv) > 1 else ""
     if last.startswith("{"):
-        data = last.encode("utf-8", "replace")
+        raw = last
     else:
         try:
-            data = sys.stdin.buffer.read(16384)
+            raw = sys.stdin.buffer.read(8_000_000).decode("utf-8", "replace")
         except Exception:
-            data = b""
-    if not data:
-        return
+            return
     try:
-        request = urllib.request.Request(url, data=data[:16384], headers={"Content-Type": "application/json"})
+        event = json.loads(raw)
+    except ValueError:
+        return
+    if not isinstance(event, dict):
+        return
+    body = json.dumps({key: event[key] for key in KEEP if isinstance(event.get(key), str) and len(event[key]) < 100}).encode()
+    try:
+        request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         urllib.request.urlopen(request, timeout=3).read(1)
     except Exception:
         pass

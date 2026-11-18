@@ -83,6 +83,13 @@ including one still planning. **Revoke and stop runs** revokes unattended
 authority and cancels active work. Archiving retains history and does not stop an
 already active run.
 
+## Interactive CLI sessions
+
+The Main agent and remote clients can also run real coding CLIs (`claude`, `codex`,
+`gemini`, `aider`) as live terminal sessions with status, optional worktree isolation
+and steering. See [cli-sessions.md](cli-sessions.md) for statuses, the security model
+and the REST/event contract.
+
 ## Browser and computer tools
 
 The internal engine exposes managed browser tools through the task broker.
@@ -182,6 +189,8 @@ Live acceptance harnesses run actual hosts and network clients:
   execution while the browser is closed.
 - `tests/workspace_scheduled_browser_e2e.py`: actual managed Chromium execution
   after the initiating browser closes, without a per-run handoff.
+- `tests/workspace_cli_sessions_e2e.py`: a real host and sockets with a fake hook-capable
+  CLI (no browser): hook-driven status, the pty websocket, the event subscription and stop.
 
 The harnesses explicitly identify scripted model adapters. They establish host
 and tool behavior, not successful model inference, external phone connectivity,

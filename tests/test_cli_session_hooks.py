@@ -62,7 +62,7 @@ def test_hook_posts_are_rate_limited_per_token(monkeypatch):
         ({"hook_event_name": "PostToolUse", "tool_name": "Bash"}, S.WORKING, "PostToolUse"),
         ({"hook_event_name": "PermissionRequest"}, S.NEEDS_APPROVAL, "PermissionRequest"),
         ({"hook_event_name": "Stop"}, S.WAITING_INPUT, "Stop"),
-        ({"hook_event_name": "SessionStart"}, None, "SessionStart"),
+        ({"hook_event_name": "SessionStart"}, S.WAITING_INPUT, "SessionStart"),
         ({"hook_event_name": "SessionEnd"}, None, "SessionEnd"),
         ({"hook_event_name": "Notification", "notification_type": "permission_prompt", "message": "Claude needs your permission"}, S.NEEDS_APPROVAL, "Notification"),
         ({"hook_event_name": "Notification", "notification_type": "idle_prompt"}, S.WAITING_INPUT, "Notification"),
@@ -177,10 +177,19 @@ def test_forwarder_posts_stdin_for_claude_and_argv_for_codex_and_always_exits_ze
     try:
         done = subprocess.run([sys.executable, str(forwarder)], input=b'{"hook_event_name":"Stop"}', env=env, capture_output=True, timeout=20)
         assert done.returncode == 0 and done.stdout == b"" and done.stderr == b""
-        payload = '{"type":"agent-turn-complete"}'
+        payload = '{"type":"agent-turn-complete","last-assistant-message":"secret reply","input-messages":["a prompt"]}'
         done = subprocess.run([sys.executable, str(forwarder), payload], stdin=subprocess.DEVNULL, env=env, capture_output=True, timeout=20)
         assert done.returncode == 0
-        assert _Collector.seen == [("/api/cli-sessions/hook/clihook_x", b'{"hook_event_name":"Stop"}'), ("/api/cli-sessions/hook/clihook_x", payload.encode())]
+        # a long prompt in the CLI's event (Claude Code includes it) neither breaks the post nor is forwarded
+        huge = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "p" * 200_000, "notification_type": 7}).encode()
+        done = subprocess.run([sys.executable, str(forwarder)], input=huge, env=env, capture_output=True, timeout=20)
+        assert done.returncode == 0
+        assert [body for _, body in _Collector.seen] == [
+            json.dumps({"hook_event_name": "Stop"}).encode(),
+            json.dumps({"type": "agent-turn-complete"}).encode(),  # the assistant's words and the inputs stay local
+            json.dumps({"hook_event_name": "UserPromptSubmit"}).encode(),
+        ]
+        assert all(path == "/api/cli-sessions/hook/clihook_x" for path, _ in _Collector.seen)
     finally:
         server.shutdown()
     for broken in ({**os.environ, H.HOOK_ENV: "http://127.0.0.1:9/never"}, {k: v for k, v in os.environ.items() if k != H.HOOK_ENV}):
@@ -199,10 +208,30 @@ def feed(tracker, transcript, *, quiet, now=100.0, **kwargs):
     return tracker.observe(now=now, quiet=quiet, tail=S.clean_text(transcript), **kwargs)
 
 
-def test_clean_text_strips_escapes_and_redraw_returns():
+def test_clean_text_renders_what_a_person_would_see():
     text = S.clean_text("\x1b[2J\x1b[H\x1b[1mbold\x1b[0m\rspin\x1b]0;title\x07\x00ok")
-    assert text == "bold\nspinok" and "\x1b" not in text
+    assert text == "spinok" and "\x1b" not in text  # a carriage return overwrites; escapes and NUL vanish
     assert S.clean_text("a" * 50, limit=10) == "a" * 10
+    assert S.clean_text("one\r\ntwo\r\n\r\n") == "one\ntwo"
+    assert S.clean_text("keep\x1b[2Jgone\r\nnew") == "gone\nnew"  # clear screen discards what came before
+    assert S.clean_text("abc\x1b[2D\x1b[KZ") == "aZ"  # cursor left, erase to end of line, write
+    assert S.clean_text("ab\x1b[3Cc") == "ab   c"  # cursor forward pads with spaces
+    assert S.clean_text("first\r\nsecond\x1b[1A\x1b[2K\rX") == "X\nsecond"  # cursor up + erase line, then overwrite
+    assert S.clean_text(b"caf\xc3\xa9 \xff") == "caf\u00e9 \ufffd"
+    assert S.clean_text("x\n" * 1000).count("\n") < 400  # bounded
+
+
+def test_words_placed_by_cursor_columns_are_read_with_their_spaces():
+    text = S.clean_text(T.CLAUDE_TRUST_POSITIONED)
+    assert "Quick safety check: Is this a project you created or one you trust?" in text
+    assert "Yes, I trust this folder" in text and "Enter to confirm \u00b7 Esc to cancel" in text
+    assert "Accessing workspace:" in text
+
+
+def test_an_in_place_redraw_erases_the_stale_dialog():
+    text = S.clean_text(T.CLAUDE_REDRAWN_IN_PLACE)
+    assert "Do you want" not in text and "Ran git status." in text
+    assert S.patterns_for("claude").classify(text) == "waiting"
 
 
 @pytest.mark.parametrize(
@@ -212,6 +241,9 @@ def test_clean_text_strips_escapes_and_redraw_returns():
         ("claude", T.CLAUDE_PROMPT, "waiting"),
         ("claude", T.CLAUDE_WORKING, "working"),
         ("claude", T.CLAUDE_STALE_APPROVAL_THEN_PROMPT, "waiting"),
+        ("claude", T.CLAUDE_TRUST_POSITIONED, "approval"),
+        ("claude", T.CLAUDE_MENU_POSITIONED, "waiting"),
+        ("claude", T.CLAUDE_REDRAWN_IN_PLACE, "waiting"),
         ("codex", T.CODEX_APPROVAL, "approval"),
         ("codex", T.CODEX_PROMPT, "waiting"),
         ("aider", T.AIDER_YN, "approval"),

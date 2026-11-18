@@ -23,8 +23,8 @@ from typing import Any
 from termx.engines.env import probe_version, resolve_executable
 
 MAX_PROMPT_CHARS = 64_000
-# A prompt this long, or starting with "-", is typed into the TUI instead of the argv
-# (an option-looking value must never be parsed as a flag by the CLI).
+# A prompt this long, starting with "-", or a single word is typed into the TUI instead of the argv
+# (an option-looking value must never be parsed as a flag, nor a bare word as a subcommand, by the CLI).
 ARGV_PROMPT_CHARS = 4_000
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$")
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -254,7 +254,9 @@ def build_launch(
     typed = None
     in_argv = False
     if prompt:
-        safe = len(prompt) <= ARGV_PROMPT_CHARS and not prompt.startswith("-")
+        # A bare word can be a subcommand name even after `--` (`claude -- mcp` runs `claude mcp`, verified
+        # on 2.1.326), so only multi-word prompts travel on the command line.
+        safe = len(prompt) <= ARGV_PROMPT_CHARS and not prompt.startswith("-") and any(ch.isspace() for ch in prompt)
         if spec.prompt == "positional" and safe:
             argv += (["--"] if spec.separator else []) + [prompt]
             in_argv = True

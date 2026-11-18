@@ -37,21 +37,104 @@ ENDED = frozenset({DONE, FAILED, LOST})
 ATTENTION = frozenset({WAITING_INPUT, NEEDS_APPROVAL})
 SOURCES = ("hook", "heuristic")
 
-_ANSI = re.compile(
-    r"\x1b\[[0-?]*[ -/]*[@-~]"  # CSI
+_TOKEN = re.compile(
+    r"\x1b\[(?P<args>[0-?]*)[ -/]*(?P<final>[@-~])"  # CSI
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC
     r"|\x1b[()][A-Za-z0-9]"  # charset
     r"|\x1b[@-Z\\-_]"  # two-byte escapes
+    r"|(?P<ctl>[\r\n\x08\t])"
+    r"|(?P<text>[^\x00-\x1f\x7f\x1b]+)"
 )
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_MAX_LINES = 400
+
+
+def _numbers(args: str, default: int = 1) -> list[int]:
+    out = []
+    for part in args.lstrip("?>").split(";"):
+        try:
+            out.append(int(part))
+        except ValueError:
+            out.append(0)
+    return [n or default for n in out] or [default]
 
 
 def clean_text(data: bytes | str, limit: int | None = None) -> str:
-    """Terminal bytes as plain text: no escape sequences, redraw returns become line breaks."""
+    """Terminal bytes as the plain text a person would see on the last lines of the screen.
+
+    A small line-oriented terminal model: cursor moves and erases are honoured (Ink-style TUIs place every
+    word with ``CSI n G``, so dropping the escapes would glue words together), colours and modes are ignored,
+    and a clear-screen discards what came before it. Not a full emulator; good enough to read and match on.
+    """
     text = data.decode("utf-8", "replace") if isinstance(data, bytes) else data
-    text = _ANSI.sub("", text).replace("\r\n", "\n").replace("\r", "\n")
-    text = _CONTROL.sub("", text)
-    return text[-limit:] if limit else text
+    lines: list[str] = []
+    row = col = top = 0
+
+    def put(run: str) -> None:
+        nonlocal col
+        while len(lines) <= row:
+            lines.append("")
+        line = lines[row]
+        if len(line) < col:
+            line += " " * (col - len(line))
+        lines[row] = line[:col] + run + line[col + len(run):]
+        col += len(run)
+
+    for match in _TOKEN.finditer(text):
+        if match.group("text") is not None:
+            put(match.group("text"))
+        elif match.group("ctl") is not None:
+            ctl = match.group("ctl")
+            if ctl == "\r":
+                col = 0
+            elif ctl == "\n":
+                row, col = row + 1, 0
+            elif ctl == "\x08":
+                col = max(0, col - 1)
+            else:
+                col = (col // 8 + 1) * 8
+        elif match.group("final") is not None:
+            final, args = match.group("final"), match.group("args")
+            if args.startswith(("?", ">")):
+                continue
+            n = _numbers(args)[0]
+            if final == "A":
+                row = max(top, row - n)
+            elif final == "B":
+                row += n
+            elif final == "C":
+                col += n
+            elif final == "D":
+                col = max(0, col - n)
+            elif final == "E":
+                row, col = row + n, 0
+            elif final == "F":
+                row, col = max(top, row - n), 0
+            elif final == "G":
+                col = max(0, n - 1)
+            elif final in "Hf":
+                nums = _numbers(args)
+                row, col = top + nums[0] - 1, max(0, (nums[1] if len(nums) > 1 else 1) - 1)
+            elif final == "K":
+                mode = _numbers(args, 0)[0] if args else 0
+                while len(lines) <= row:
+                    lines.append("")
+                line = lines[row]
+                lines[row] = line[:col] if mode == 0 else (" " * min(col + 1, len(line)) + line[col + 1:]) if mode == 1 else ""
+            elif final == "J":
+                mode = _numbers(args, 0)[0] if args else 0
+                if mode in (2, 3):
+                    lines.clear()
+                    row = col = top = 0
+                elif mode == 0:
+                    del lines[row + 1:]
+                    if row < len(lines):
+                        lines[row] = lines[row][:col]
+        if len(lines) > _MAX_LINES:
+            drop = len(lines) - _MAX_LINES
+            del lines[:drop]
+            row, top = max(0, row - drop), max(0, top - drop)
+    rendered = "\n".join(line.rstrip() for line in lines).rstrip("\n")
+    return rendered[-limit:] if limit else rendered
 
 
 @dataclass(frozen=True)
@@ -61,6 +144,8 @@ class PatternSet:
     approval: tuple[str, ...] = ()
     waiting: tuple[str, ...] = ()
     working: tuple[str, ...] = ()
+    # Footers of choice menus: "waiting" only when nothing more specific (an approval dialog is also a menu).
+    menu: tuple[str, ...] = ()
     _compiled: dict[str, tuple[re.Pattern[str], ...]] = field(default_factory=dict, compare=False, repr=False)
 
     def compiled(self, kind: str) -> tuple[re.Pattern[str], ...]:
@@ -79,6 +164,8 @@ class PatternSet:
                     pass
                 if last is not None and (best is None or (last.end(), rank) > (best[0], best[1])):
                     best = (last.end(), rank, name)
+        if best is None and any(pattern.search(tail) for pattern in self.compiled("menu")):
+            return "waiting"
         return best[2] if best else None
 
 
@@ -90,11 +177,14 @@ PATTERNS: dict[str, PatternSet] = {
         approval=(
             r"Do you want to (?:proceed|make this edit|create|run)",
             r"\b1\.\s*Yes\b[\s\S]{0,200}\b(?:No|esc)\b",
-            r"Do you trust the files in this folder",
+            # The folder-trust dialog every fresh worktree meets (wording seen on 2.1.326, best-effort).
+            r"Is this a project you created or one you trust",
+            r"Yes, I trust this folder",
             r"Allow (?:once|always)",
         ),
-        waiting=(r"\?\s+for shortcuts", r"Enter to confirm", r"^\s*>\s*$"),
+        waiting=(r"\?\s+for shortcuts", r"^\s*>\s*$"),
         working=(r"esc to interrupt", r"…\s*\(\d+s"),
+        menu=(r"Enter to confirm", r"Esc to cancel"),
     ),
     "codex": PatternSet(
         approval=(

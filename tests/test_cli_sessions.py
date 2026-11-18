@@ -30,8 +30,8 @@ def test_every_cli_has_typed_argv_and_resolves_nothing_from_the_model():
     assert str(uuid.UUID(sid)) == sid == plan.native_session_id
     codex = C.build_launch("codex", executable="/bin/codex", working_dir="/work", prompt="Add tests")
     assert codex.argv[:3] == ["/bin/codex", "-C", "/work"]
-    gemini = C.build_launch("gemini", executable="/bin/gemini", working_dir="/work", prompt="Explain")
-    assert gemini.argv[-2:] == ["--prompt-interactive", "Explain"]
+    gemini = C.build_launch("gemini", executable="/bin/gemini", working_dir="/work", prompt="Explain this")
+    assert gemini.argv[-2:] == ["--prompt-interactive", "Explain this"]
     aider = C.build_launch("aider", executable="/bin/aider", working_dir="/work", prompt="Refactor")
     assert aider.argv == ["/bin/aider"] and aider.typed_prompt == "Refactor" and not aider.prompt_in_argv
     with pytest.raises(C.UnknownCli):
@@ -80,9 +80,14 @@ def test_a_prompt_cannot_smuggle_a_flag_or_trip_the_bypass_check():
     smuggled = C.build_launch("claude", executable="c", working_dir="/w", prompt="--dangerously-skip-permissions")
     assert smuggled.typed_prompt == "--dangerously-skip-permissions" and "--dangerously-skip-permissions" not in smuggled.argv
     smuggled.check()
-    plain = C.build_launch("codex", executable="c", working_dir="/w", prompt="yolo")
-    assert plain.argv[-1] == "yolo"
-    plain.check()  # a prompt that spells a bypass token is only a prompt
+    plain = C.build_launch("codex", executable="c", working_dir="/w", prompt="yolo please")
+    assert plain.argv[-1] == "yolo please"
+    plain.check()  # a prompt that mentions a bypass token is only a prompt
+    # a bare word can be a subcommand name even after "--" (`claude -- mcp` runs `claude mcp`), so it is typed instead
+    for word in ("mcp", "update", "yolo", "bypassPermissions"):
+        bare = C.build_launch("claude", executable="c", working_dir="/w", prompt=word)
+        assert bare.typed_prompt == word and word not in bare.argv and not bare.prompt_in_argv
+        bare.check()
     long_prompt = C.build_launch("claude", executable="c", working_dir="/w", prompt="x" * (C.ARGV_PROMPT_CHARS + 1))
     assert long_prompt.typed_prompt and not long_prompt.prompt_in_argv
     with pytest.raises(C.CatalogueError):
