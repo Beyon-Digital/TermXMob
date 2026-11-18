@@ -18,6 +18,10 @@ from termx.graphql.context import TermxContext
 from termx.graphql.errors import fail, to_graphql_error
 from termx.graphql import types as T
 from termx.workspace.public_events import context_task_events
+from termx.cli_sessions.gql import CliSessionEvent
+from termx.cli_sessions.status import ENDED as ENDED_STATUSES
+
+CLI_POLL_SECONDS = 1.0
 
 Ctx = Info[TermxContext, None]
 
@@ -45,6 +49,36 @@ class Subscription:
                 yield T.ActivityEvent.wrap({"type": "activity.remove", "id": item_id})
             last = current
             await asyncio.sleep(2.0)
+
+    @strawberry.subscription
+    async def cli_session_events(self, info: Ctx) -> AsyncGenerator[CliSessionEvent, None]:
+        """Poll-and-diff of the caller's CLI sessions: created / status / exited (see docs/cli-sessions.md)."""
+        from termx.cli_sessions.http import owner_for, visible
+
+        ctx = info.context
+        ctx.require("terminal-view")
+        state = ctx.state
+        service = getattr(state, "cli_sessions", None)
+        if service is None:
+            fail(503, "CLI sessions are unavailable")
+        last: dict[str, tuple] = {}
+        while True:
+            ctx.require("terminal-view")  # authority can change while the socket is open
+            owner = owner_for(state, ctx.secret)
+            current = {row["id"]: row for row in service.rows(owner) if visible(state, ctx.secret, row)}
+            for session_id, row in current.items():
+                key = (row.get("status"), row.get("status_source"), row.get("ended_at"))
+                previous = last.get(session_id)
+                public = service.public(row)
+                if previous is None:
+                    yield CliSessionEvent.wrap({"type": "cli.session.created", "session": public})
+                if row.get("status") in ENDED_STATUSES:
+                    if previous is None or previous[0] not in ENDED_STATUSES:
+                        yield CliSessionEvent.wrap({"type": "cli.session.exited", "session": public})
+                elif previous is not None and previous != key:
+                    yield CliSessionEvent.wrap({"type": "cli.session.status", "session": public})
+            last = {session_id: (row.get("status"), row.get("status_source"), row.get("ended_at")) for session_id, row in current.items()}
+            await asyncio.sleep(CLI_POLL_SECONDS)
 
     @strawberry.subscription
     async def agent_task_events(

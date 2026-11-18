@@ -350,6 +350,7 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
             # Discovery only: failures keep the saved catalog and set catalog_error.
             state.agent.catalogue.start()
         yield
+        await state.cli_sessions.close()
         await state.data_studio.close()
         await state.studio.close()
         await state.push.close()
@@ -393,6 +394,8 @@ def create_app(state: AppState | None = None, web_dir: Path | None = None) -> Fa
     mount_workspace(app, state)
     from termx.host_service_http import mount_host_service
     mount_host_service(app, state)
+    from termx.cli_sessions.http import mount_cli_sessions
+    mount_cli_sessions(app, state)
     from termx.mcp.task_broker import McpTaskBroker
     state.agent.mcp = McpTaskBroker(state)
     from termx.workspace.prompt_queue_http import mount_prompt_queue

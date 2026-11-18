@@ -335,6 +335,37 @@ type BotTemplate {
   instructions: String!
 }
 
+type CliSession {
+  id: String!
+  cli: String!
+  label: String
+  title: String
+  status: String!
+  status_source: String
+  status_detail: String
+  status_updated_at: Float
+  project_id: String
+  cwd: String
+  isolation: String
+  worktree: JSON
+  pty_session_id: String
+  sandbox_profile: String
+  mode: String
+  started_at: Float
+  updated_at: Float
+  ended_at: Float
+  exit_code: Int
+  ended_reason: String
+  native_session_id: String
+  resumable: Boolean
+  attention: Boolean
+}
+
+type CliSessionEvent {
+  type: String!
+  session: CliSession
+}
+
 input CommandInput {
   name: String!
   command: String!
@@ -1510,6 +1541,7 @@ type SkippedSkillFile {
 
 type Subscription {
   activity_events: ActivityEvent!
+  cli_session_events: CliSessionEvent!
   agent_task_events(task_id: String!, after: Int! = 0): TaskEventEnvelope!
   notification_events: HostNotification!
 }
