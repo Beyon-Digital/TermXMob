@@ -1113,6 +1113,8 @@ type Mutation {
   refresh_engine_catalogue(engine_id: String = null, cwd: String = null): JSON!
   authenticate_engine(engine_id: String!, method_id: String!): JSON!
   save_agent_provider(input: AgentProviderInput!): AgentProvider!
+  set_web_search_key(key: String!): WebSearchStatus!
+  clear_web_search_key: WebSearchStatus!
   delete_agent_provider(provider_id: String!): Ok!
   refresh_provider_models(provider_id: String!): AgentProvider!
   set_model_routing(input: ModelRoutingInput!): JSON!
@@ -1453,6 +1455,7 @@ type Query {
   engine_configuration(engine_id: String!, cwd: String = null): JSON!
   engine_task_configuration(task_id: String!): JSON!
   agent_providers: [AgentProvider!]!
+  web_search_status: WebSearchStatus!
   orchestrator_board: OrchestratorBoard!
   model_routing: JSON!
   engines: [EngineDescriptor!]!
@@ -1783,6 +1786,15 @@ type VoiceStatus {
   engines: JSON!
   stt: JSON!
   live: JSON!
+}
+
+type WebSearchStatus {
+  available: Boolean!
+  provider: String!
+  source: String
+  store_available: Boolean!
+  custom_endpoint: Boolean!
+  error: String
 }
 
 type Workspace {
