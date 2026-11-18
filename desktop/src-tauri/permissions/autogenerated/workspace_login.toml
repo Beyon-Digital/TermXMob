@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-login"
+description = "Enables the workspace_login command without any pre-configured scope."
+commands.allow = ["workspace_login"]
+
+[[permission]]
+identifier = "deny-workspace-login"
+description = "Denies the workspace_login command without any pre-configured scope."
+commands.deny = ["workspace_login"]

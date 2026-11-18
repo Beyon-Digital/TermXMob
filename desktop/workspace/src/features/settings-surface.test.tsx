@@ -283,3 +283,6 @@ it('reports no matching categories truthfully and preserves a dirty draft while 
  fireEvent.click(within(screen.getByRole('dialog',{name:'Discard unsaved changes?'})).getByRole('button',{name:'Keep editing'}));
  expect(screen.getByRole('textbox',{name:'first'})).toHaveValue('Keep this settings draft');
 });
+
+// Recovered from codex/audit-publish-20261029 (tag archive/2026-11-18/branch-audit-publish-20261029).
+it('uses the same guarded category transition for the compact mobile picker',()=>{render(<Harness/>);fireEvent.change(screen.getByRole('textbox',{name:'first'}),{target:{value:'keep this draft'}});const picker=screen.getByLabelText('Settings category');fireEvent.change(picker,{target:{value:'models'}});const dialog=screen.getByRole('dialog',{name:'Discard unsaved changes?'});expect(picker).toHaveValue('memory');fireEvent.click(within(dialog).getByRole('button',{name:'Keep editing'}));expect(screen.getByRole('textbox',{name:'first'})).toHaveValue('keep this draft');expect(picker).toHaveValue('memory')});

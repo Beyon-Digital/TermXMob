@@ -1,0 +1,82 @@
+{
+  "title": "TermX settings design specification",
+  "context": {
+    "account": "The authenticated principal",
+    "host": "The host reached by the current authenticated API or native bridge",
+    "scope_selector": false,
+    "project_and_session_overrides": false,
+    "host_change": "Remount settings when the authenticated account or host identity changes",
+    "hook_targets": "A project and folder identify where a command executes; they never change the settings context"
+  },
+  "layout": {
+    "desktop": {
+      "max_width_px": 1060,
+      "max_height_px": 820,
+      "rail_width_px": 224,
+      "content_padding_px": 38
+    },
+    "tablet": {
+      "rail_width_px": 208,
+      "content_padding_px": 24
+    },
+    "mobile": {
+      "max_breakpoint_px": 700,
+      "category_control": "Native select",
+      "content_padding_px": 20,
+      "minimum_control_height_px": 44
+    },
+    "navigation_groups": [
+      "Preferences",
+      "Workers",
+      "Host"
+    ],
+    "content": "Flat setting rows with a label, optional short description and direct action. Technical setup uses collapsed disclosures."
+  },
+  "visuals": {
+    "typeface": "Existing Geist Variable system",
+    "body_px": 14,
+    "description_px": 13,
+    "page_title_px": 22,
+    "colors": "Inherit the active app theme; neutral surfaces with existing green focus accent",
+    "dark": {
+      "background": "#151716",
+      "surface": "#1d201e",
+      "foreground": "#f0f3ed",
+      "border": "#343d37"
+    },
+    "light": {
+      "background": "#fafaf9",
+      "surface": "#ffffff",
+      "foreground": "#191f1c",
+      "border": "#dce1da"
+    },
+    "art": {
+      "component": "SettingsIcon",
+      "viewbox": "0 0 24 24",
+      "stroke_px": 1.6,
+      "color": "currentColor",
+      "meaning": "Standalone symbols for each settings category",
+      "decorative": true
+    }
+  },
+  "flows": {
+    "theme": "Settings > General > Theme; applies immediately",
+    "account": "Settings > General > Sign out",
+    "access": "Settings > General > Manage access",
+    "models": "Settings > General > Manage models",
+    "technical_setup": "Access & sessions > Host connectivity > relevant configuration"
+  },
+  "interaction": {
+    "navigation": "Arrow keys, Home and End move category focus; Enter selects. Mobile picker uses the same guarded transition.",
+    "drafts": "Unsaved edits survive cancelled navigation, failed saves and non-saving preview requests",
+    "writes": "A successful save clears only the unchanged draft that produced it",
+    "destructive_actions": "Review the exact affected record or host before dispatch",
+    "modal": "Trap focus, restore the opener, guard Escape and fit the visual viewport when the keyboard opens",
+    "disclosures": "Keep drafts mounted after first opening; defer host setup requests until needed"
+  },
+  "references": [
+    "https://learn.chatgpt.com/docs/reference/settings",
+    "https://support.claude.com/en/articles/14328846-browse-skills-connectors-and-plugins-in-one-directory",
+    "https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors"
+  ]
+}

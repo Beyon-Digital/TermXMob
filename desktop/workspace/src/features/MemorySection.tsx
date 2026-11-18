@@ -76,7 +76,7 @@ export default function MemorySection({me,projectId,agentId=null,embedded=false}
       </section>}
       <section aria-label="Saved memory">
         <Heading>Memory with provenance</Heading>
-        {!saved.length&&<Empty>{proposed.length?'Nothing kept yet. Keep a proposal above or add a note below.':'No memory saved. Add facts and decisions that should carry into future sessions.'}</Empty>}
+        {!saved.length&&<Empty>{search.trim()&&memories.length?'No matches. Try another search.':proposed.length?'Nothing kept yet. Keep a proposal above or add a note below.':'No memory saved. Add facts and decisions that should carry into future sessions.'}</Empty>}
         {saved.map(memory=><MemoryItem key={memory.id} memory={memory} agentId={agentId}>
           <ActionButton busy={busy} onClick={()=>setEditing(memory)}>Edit memory</ActionButton>
           <ActionButton busy={busy} onClick={()=>void post('/api/workspace/memory',memoryPayload(memory,{excluded:!memory.excluded}),'Memory scope updated')}>{memory.excluded?'Include in context':'Exclude from context'}</ActionButton>

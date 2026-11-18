@@ -45,4 +45,10 @@ desktop/signing.env
 .playwright-cli/
 out/
 
+# Local browser verification artifacts
+output/playwright/
+
+# Runtime data written by a local TermX host started inside a worktree
+.termx-live/
+
 .claude/

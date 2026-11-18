@@ -186,3 +186,23 @@ it('gives people without host-admin one line about desktop control and no instal
  expect(await screen.findByText(/Desktop control is not set up on this computer\. A host admin can set it up/)).toBeVisible();
  expect(screen.queryByRole('button',{name:'Install desktop control'})).toBeNull();
 });
+
+// Recovered from codex/audit-publish-20261029 (tag archive/2026-11-18/branch-audit-publish-20261029). Its hook tests are covered by hook-settings.test.tsx and its filtered-memory test by memory-section.test.tsx.
+it('opens access on devices and loads host setup only when requested',async()=>{
+ mocked.mockImplementation(async(path)=>{
+  if(path==='/auth/me')return {principal:{id:'owner',display_name:'Owner',scopes:['host-admin']},host_id:'host',session_id:'own'} as any;
+  if(path==='/auth/sessions')return [{id:'own',device_name:'My laptop',strength:'password',expires:100}] as any;
+  if(path==='/graphql')return {data:{projects:[]}} as any;
+  if(path==='/auth/lan-tls')return {configuration:{enabled:false,host:'0.0.0.0',port:8788,names:[]},active:{enabled:false},restart_required:false} as any;
+  if(path==='/api/host/service')return {installed:false,running:false,ready:false,supported:true,backend:'supervisor',managed:false} as any;
+  return String(path).endsWith('/principals')||String(path).endsWith('/adapters')?[]:{} as any;
+ });
+ render(<Managers embedded section="access" projectId={null} sessionId={null}/>);
+ await screen.findByText('My laptop');await waitFor(()=>expect(screen.getByRole('button',{name:'Refresh'})).toBeEnabled());
+ expect(screen.queryByText('Device permissions')).not.toBeInTheDocument();
+ expect(mocked.mock.calls.some(([path])=>path==='/auth/lan-tls'||path==='/api/host/service')).toBe(false);
+ const connectivity=screen.getByText('Host connectivity',{selector:'summary'});
+ fireEvent.click(connectivity);fireEvent(connectivity.closest('details')!,new Event('toggle'));
+ await screen.findByText('Local network HTTPS is off');
+ expect(mocked).toHaveBeenCalledWith('/api/host/service');
+});

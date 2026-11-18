@@ -108,3 +108,14 @@ it('fixes Applies to after save and sends the saved scope and agent when editing
  await waitFor(()=>expect(done).toHaveBeenCalledOnce());
  expect(JSON.parse(String(mocked.mock.calls[0][1]?.body))).toMatchObject({identifier:'e',revision:4,scope:'agent',agent_id:'bot-1',project_id:null});
 });
+
+// Recovered from codex/audit-publish-20261029: a filter that hides every note says so instead of claiming nothing is saved.
+it('explains a search that matches no note instead of saying no memory is saved',async()=>{
+ serve(Array.from({length:8},(_,index)=>row({id:`m${index}`,content:`Remember item ${index}`})));
+ render(<Managers embedded section="memory" projectId={null} sessionId={null}/>);
+ await screen.findByText('Remember item 0');
+ fireEvent.change(screen.getByLabelText('Search settings'),{target:{value:'unmatched'}});
+ expect(screen.getByText('No matches. Try another search.')).toBeInTheDocument();
+ expect(screen.queryByText(/No memory saved/)).not.toBeInTheDocument();
+ expect(screen.queryByText('Remember item 0')).not.toBeInTheDocument();
+});

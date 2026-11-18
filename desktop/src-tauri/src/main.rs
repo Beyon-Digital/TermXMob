@@ -105,9 +105,6 @@ fn main() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_menu_event(|app, event| menu::handle_menu_event(app, event.id().as_ref()));
-    #[cfg(target_os = "macos")]
-    let builder = builder.menu(menu::app_menu);
-
     builder
         .setup(|app| {
             let handle = app.handle().clone();
@@ -115,6 +112,11 @@ fn main() {
             logging::desktop(&handle, "setup: start");
             let desktop_config = config::load(&handle)?;
             logging::desktop(&handle, "setup: config loaded");
+            // The builder's menu callback runs before Tauri initializes its
+            // path plugin. This menu reads the saved host mode, so install it
+            // during setup, after PathResolver and the private config are ready.
+            #[cfg(target_os = "macos")]
+            handle.set_menu(menu::app_menu(&handle)?)?;
             ui::create_main_window(&handle)?;
             logging::desktop(&handle, "setup: window created");
             tray::init(&handle)?;

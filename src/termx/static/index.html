@@ -116,6 +116,7 @@
     </div>
     <div class="key-row">
       <button type="button" data-key="CLR">CLR</button>
+      <button type="button" data-key="KB">KB</button>
       <button type="button" data-key="/">/</button>
       <button type="button" data-key="-">-</button>
     </div>
@@ -243,6 +244,11 @@
         sendSignal("int");
         sendInput("\x03");
         term.focus();
+        return;
+      }
+      if (name === "KB") {
+        term.blur();
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         return;
       }
       let seq = SEQ[name] || name;
