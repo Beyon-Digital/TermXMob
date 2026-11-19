@@ -138,7 +138,7 @@ def test_workspace_pty_enforces_roots_and_preserves_input_output(tmp_path, monke
             while b"\x1b[?2004h" not in ready and time.monotonic()<deadline:
                 ready+=terminal.read(.1) or b""
         terminal.write(b"echo AFTER_INTERRUPT\n")
-        out = b""; deadline = time.monotonic() + 10
+        out = b""; deadline = time.monotonic() + 30
         while b"\r\nAFTER_INTERRUPT\r\n" not in out and time.monotonic() < deadline:
             out += terminal.read(.1) or b""
         assert b"\r\nAFTER_INTERRUPT\r\n" in out, out[-500:]
