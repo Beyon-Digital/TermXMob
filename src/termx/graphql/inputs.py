@@ -120,6 +120,8 @@ class AgentProviderInput:
     model: str = ""
     capabilities: list[str] | None = None
     api_key: str | None = None
+    clear_api_key: bool = False  # delete the saved key; ignored when api_key is also given
+    key_optional: bool | None = None  # an OpenAI-compatible server that needs no key (a local Ollama, LM Studio or vLLM)
     # {model_id: {context_window, max_output, price_in, price_out, capabilities}}; user values win over discovered ones.
     model_meta: JSON | None = None
     wire: str | None = None  # "responses" (default) or "chat" (Chat Completions); "messages" is implied by kind "anthropic"

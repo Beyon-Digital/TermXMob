@@ -34,7 +34,7 @@ export default function ProviderAccountForm(props:FormProps){
 function OpenAiAccountForm({account,onSave,onRefresh,onCancel,busy,start,onKindChange}:FormProps&{start?:Start;onKindChange:(provider:string,name:string)=>void}){
  const {formProps,markClean}=useDirtyForm('provider-account');
  const begin=providers.find(row=>row.id===start?.provider)??providers[0];
- const [id,setId]=useState(account?.id||''),[name,setName]=useState(account?.name||start?.name||''),[url,setUrl]=useState(account?.base_url||begin.url),[secret,setSecret]=useState(''),[showSecret,setShowSecret]=useState(false),[capabilities,setCapabilities]=useState<string[]>(account?.capabilities||startCapabilities(start?.provider));
+ const [id,setId]=useState(account?.id||''),[name,setName]=useState(account?.name||start?.name||''),[url,setUrl]=useState(account?.base_url||begin.url),[secret,setSecret]=useState(''),[showSecret,setShowSecret]=useState(false),[clearKey,setClearKey]=useState(false),[keyOptional,setKeyOptional]=useState(account?.key_optional??start?.provider==='local'),[capabilities,setCapabilities]=useState<string[]>(account?.capabilities||startCapabilities(start?.provider));
  const [included,setIncluded]=useState(()=>modelList(account?.model||'')),[overrides,setOverrides]=useState<ModelOverrides>(account?.model_overrides||{});
  const [wire,setWire]=useState<'responses'|'chat'>(account?.wire==='chat'?'chat':'responses');
  const [maxOutput,setMaxOutput]=useState(String(account?.limits?.max_output_tokens??'')),[requestTimeout,setRequestTimeout]=useState(String(account?.limits?.request_timeout_s??''));
@@ -43,7 +43,7 @@ function OpenAiAccountForm({account,onSave,onRefresh,onCancel,busy,start,onKindC
  const disabled=busy||saving;
  const catalog=account?.model_catalog||{};
  const clearError=(field:keyof Errors)=>setErrors(prior=>({...prior,[field]:undefined}));
- function chooseProvider(value:string){if(value===ANTHROPIC_KIND){onKindChange(value,name);return}const selected=providers.find(row=>row.id===value)!;setProvider(value);setUrl(selected.url);setSecret('');if(value==='kie')setCapabilities(['image','video']);else if(value==='openrouter')setCapabilities(['shell','functions','image','video']);else if(provider==='kie')setCapabilities(['shell','functions']);clearError('base_url')}
+ function chooseProvider(value:string){if(value===ANTHROPIC_KIND){onKindChange(value,name);return}const selected=providers.find(row=>row.id===value)!;setProvider(value);setUrl(selected.url);setSecret('');setClearKey(false);setKeyOptional(value==='local');if(value==='kie')setCapabilities(['image','video']);else if(value==='openrouter')setCapabilities(['shell','functions','image','video']);else if(provider==='kie')setCapabilities(['shell','functions']);clearError('base_url')}
  function include(model:string,checked:boolean){
   const known=[...new Set([...Object.keys(catalog),...included])],current=included.length?included:known;
   const next=checked?[...new Set([...current,model])]:current.filter(item=>item!==model);
@@ -52,6 +52,9 @@ function OpenAiAccountForm({account,onSave,onRefresh,onCancel,busy,start,onKindC
  function override(model:string,field:keyof ModelOverride,value:number|undefined){
   setOverrides(prior=>{const row={...prior[model]};if(value===undefined||Number.isNaN(value))delete row[field];else row[field]=value;const next={...prior};if(Object.keys(row).length)next[model]=row;else delete next[model];return next});
  }
+ // Only a compatible server can run without a key; OpenAI itself and the media adapters always need one.
+ const compatible=account?account.kind==='openai-compatible':provider==='custom'||provider==='local';
+ const envName=`TERMX_AI_${(id.trim()||account?.id||'').replace(/[^A-Za-z0-9]/g,'_').toUpperCase()}_API_KEY`;
  function validate(){
   const found:Errors={};
   if(!name.trim())found.name='Enter a display name.';
@@ -67,7 +70,8 @@ function OpenAiAccountForm({account,onSave,onRefresh,onCancel,busy,start,onKindC
   if(pending.current||!validate())return;
   pending.current=true;setSaving(true);setError('');
   if(!generatedId.current)generatedId.current=name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+crypto.randomUUID().slice(0,8);
-  const input:ProviderAccountInput={id:id.trim()||generatedId.current,name:name.trim(),kind:account?.kind||'openai-compatible',base_url:url.trim(),model:included.join('\n'),capabilities,api_key:secret||null,wire,limits:{max_output_tokens:maxOutput?Number(maxOutput):null,request_timeout_s:requestTimeout?Number(requestTimeout):null}};
+  const input:ProviderAccountInput={id:id.trim()||generatedId.current,name:name.trim(),kind:account?.kind||'openai-compatible',base_url:url.trim(),model:included.join('\n'),capabilities,api_key:secret||null,...(clearKey&&!secret?{clear_api_key:true}:{}),...(compatible&&(!account||account.key_optional!==undefined)?{key_optional:keyOptional}:{}),// an account loaded without the field must not have the choice reset by a save
+  wire,limits:{max_output_tokens:maxOutput?Number(maxOutput):null,request_timeout_s:requestTimeout?Number(requestTimeout):null}};
   if(Object.keys(overrides).length||Object.keys(account?.model_overrides||{}).length)input.model_meta=overrides;
   try{
    const result=await onSave(input);
@@ -85,8 +89,11 @@ function OpenAiAccountForm({account,onSave,onRefresh,onCancel,busy,start,onKindC
   {provider==='openrouter'&&<p className="manager-help">The media studio discovers image and video models through OpenRouter. Declare the media capabilities you want available below; generation still requires your consent.</p>}
   {provider==='kie'&&<p className="manager-help">Use this media adapter for supported studio operations such as portrait lip sync. This account does not provide chat completions.</p>}
   <FormField label="Display name" error={errors.name}>{control=><Input {...control} name="name" aria-required="true" value={name} placeholder={providers.find(row=>row.id===provider)?.label} disabled={disabled} onChange={event=>{setName(event.target.value);clearError('name')}}/>}</FormField>
-  {(provider==='custom'||account)&&<FormField label="Provider API address" error={errors.base_url}>{control=><Input {...control} name="base_url" inputMode="url" aria-required="true" value={url} placeholder="https://provider.example/v1" disabled={disabled} onChange={event=>{setUrl(event.target.value);clearError('base_url')}}/>}</FormField>}
-  <FormField label={account?'Replace API key':'API key'} hint={account?'Leave blank to keep the current key.':undefined}>{control=><span className="secret-input"><Input {...control} name="api_key" type={showSecret?'text':'password'} autoComplete="new-password" value={secret} disabled={disabled} onChange={event=>setSecret(event.target.value)}/><Button type="button" variant="ghost" size="sm" onClick={()=>setShowSecret(value=>!value)}>{showSecret?'Hide key':'Show key'}</Button></span>}</FormField>
+  {(provider==='custom'||provider==='local'||account)&&<FormField label="Provider API address" error={errors.base_url}>{control=><Input {...control} name="base_url" inputMode="url" aria-required="true" value={url} placeholder="https://provider.example/v1" disabled={disabled} onChange={event=>{setUrl(event.target.value);clearError('base_url')}}/>}</FormField>}
+  {compatible&&<label className="provider-keyless"><input type="checkbox" name="key_optional" checked={keyOptional} disabled={disabled} onChange={event=>setKeyOptional(event.target.checked)}/> <span>This server needs no API key</span></label>}
+  {account?.key_source==='environment'&&<Alert role="status">This account uses the <code>{envName}</code> environment variable on the host. It overrides any key saved here, so a key you enter will not take effect until that variable is removed.</Alert>}
+  <FormField label={account?(keyOptional?'Replace API key (optional)':'Replace API key'):(keyOptional?'API key (optional)':'API key')} hint={account?(account.key_saved?'Leave blank to keep the current key.':undefined):undefined}>{control=><span className="secret-input"><Input {...control} name="api_key" type={showSecret?'text':'password'} autoComplete="new-password" value={secret} disabled={disabled} onChange={event=>setSecret(event.target.value)}/><Button type="button" variant="ghost" size="sm" onClick={()=>setShowSecret(value=>!value)}>{showSecret?'Hide key':'Show key'}</Button></span>}</FormField>
+  {account?.key_saved&&<div className="manager-item-actions">{clearKey?<><span className="manager-help" role="status">The saved key will be removed when you save.</span><Button type="button" variant="secondary" disabled={disabled} onClick={()=>setClearKey(false)}>Keep the key</Button></>:<Button type="button" variant="secondary" disabled={disabled||!!secret} onClick={()=>setClearKey(true)}>Remove saved key</Button>}</div>}
   <p className="manager-help provider-destination">{url?<>Requests use <strong>{url}</strong>. Your host keeps the key; it is never added to chat history.</>:'Enter the API address supplied by your provider.'}</p>
   <section className="provider-models" aria-labelledby={`${account?.id||'new'}-models`}>
    <div className="provider-models-header"><h4 id={`${account?.id||'new'}-models`}>Models</h4>{account&&onRefresh&&<Button type="button" variant="secondary" data-keeps-draft disabled={disabled} onClick={()=>void onRefresh()}>Refresh models</Button>}</div>

@@ -420,12 +420,12 @@ class AgentMutations:
 
     @strawberry.mutation
     @resolver
-    async def install_acp_runner(self, info: Ctx, registry_id: str) -> JSON:
+    async def install_acp_runner(self, info: Ctx, registry_id: str, allow_unverified: bool = False) -> JSON:
         ctx = info.context
         ctx.require_host('host-admin')
         registry = ctx.state.engines.acp_registry
         try:
-            engine_id, executable, args, entry = await registry.install(registry_id)
+            engine_id, executable, args, entry = await registry.install(registry_id, allow_unverified=allow_unverified)
             async with ctx.state.engines._lock:
                 latest = ctx.state.store.get().agent
                 runners = {key: dict(value) for key, value in latest.acp_runners.items()}
@@ -517,6 +517,8 @@ class AgentMutations:
                 model=input.model,
                 capabilities=input.capabilities,
                 api_key=input.api_key,
+                clear_api_key=input.clear_api_key,
+                key_optional=input.key_optional,
                 model_meta=input.model_meta,
                 wire=input.wire,
                 limits=input.limits,

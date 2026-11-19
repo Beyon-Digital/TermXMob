@@ -535,6 +535,10 @@ class AgentProvider(DictBacked):
     wire: str | None
     capabilities: list[str] | None
     secret_configured: bool | None
+    key_saved: bool | None
+    key_optional: bool | None
+    notice: str | None  # set on a save that changed something the person did not ask for (a key dropped with the server address)
+    key_source: str | None  # "environment" when TERMX_AI_<ID>_API_KEY is set (it wins over a saved key), "credential_store", or null
     created_at: float | None
     updated_at: float | None
 

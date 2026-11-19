@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import mimetypes
 import shutil
 import uuid
@@ -364,7 +365,13 @@ class AgentManager:
     # Provider configuration -----------------------------------------
 
     def list_providers(self) -> list[dict[str, Any]]:
-        return self.store.list_providers()
+        return [self._with_key_source(provider) for provider in self.store.list_providers()]
+
+    def _with_key_source(self, provider: dict[str, Any]) -> dict[str, Any]:
+        """Say where the key comes from, so the screen can explain an environment variable overriding a saved key."""
+        if provider.get("kind") == "chatgpt":
+            return provider
+        return {**provider, "key_source": self.credentials.source(provider["id"])}
 
     def save_provider(
         self,
@@ -376,6 +383,8 @@ class AgentManager:
         model: str,
         capabilities: list[str] | None,
         api_key: str | None = None,
+        clear_api_key: bool = False,
+        key_optional: bool | None = None,
         model_meta: dict[str, Any] | None = None,
         wire: str | None = None,
         limits: dict[str, Any] | None = None,
@@ -394,8 +403,7 @@ class AgentManager:
             wire = "messages"
             # No models typed in: offer the current Claude models, default first.
             model = model if model.strip() else "\n".join(ANTHROPIC_MODELS)
-        if not base_url.startswith(("https://", "http://")):
-            raise ValueError("provider URL must use HTTP or HTTPS")
+        base_url = _checked_base_url(base_url)
         if kind != "anthropic" and wire is not None and wire not in {"responses", "chat"}:
             raise ValueError("provider wire must be 'responses' or 'chat'")
         if kind == "anthropic":
@@ -417,14 +425,22 @@ class AgentManager:
         api_key = api_key.strip() if api_key else api_key
         if api_key and (not api_key.isprintable() or any(ch.isspace() for ch in api_key)):
             raise ValueError("API key must not contain spaces or control characters")
+        notice: str | None = None
+        if key_optional and kind != "openai-compatible":
+            raise ValueError("Only an OpenAI-compatible server can run without an API key")
         configured = bool(self.credentials.get(provider_id))
         if api_key:
             self.credentials.set(provider_id, api_key)
             configured = True
+        elif clear_api_key:
+            self.credentials.delete(provider_id)
+            # An environment variable survives deleting the saved key; the account stays configured through it.
+            configured = bool(self.credentials.get(provider_id))
         elif configured and current and _origin(current["base_url"]) != _origin(base_url):
             # The key was issued for the old server; do not send it to a new one.
             self.credentials.delete(provider_id)
             configured = False
+            notice = "The saved API key was removed because the server address changed. Enter the key for the new server."
         # Config or key changed: drop the pooled client so the next adapter
         # does not reuse a stale base URL or credential.
         self._http.evict(provider_id)
@@ -438,6 +454,7 @@ class AgentManager:
             model=model,
             capabilities=allowed,
             secret_configured=configured,
+            key_optional=key_optional,
             model_overrides=overrides,
             wire=wire,
             limits=provider_limits,
@@ -446,7 +463,8 @@ class AgentManager:
             # The old catalog describes a different server.
             self.store.clear_provider_catalog(provider_id)
             provider = self.store.get_provider(provider_id) or provider
-        return provider
+        view = self._with_key_source(provider)
+        return {**view, "notice": notice} if notice else view
 
     async def test_provider(self, provider_id: str, *, billed: bool = False) -> dict[str, str]:
         """Check the connection with the free model-list request; ``billed`` runs one real model call instead."""
@@ -3639,6 +3657,30 @@ def _output_cap(meta: dict[str, Any] | None, limits: dict[str, Any] | None = Non
     return min(caps) if caps else None
 
 
+def _checked_base_url(value: str) -> str:
+    """A provider base URL the adapters can build requests from, with nothing secret or ambiguous in it.
+
+    Rejects what ``startswith("http")`` let through: no host (``https://``), credentials in the URL (they would be
+    returned to every reader of the provider list and logged), and a query or fragment (the adapters append
+    ``/chat/completions`` to the path, which a query string would swallow).
+    """
+    text = (value or "").strip()
+    try:
+        parts = urlsplit(text)
+        parts.port  # noqa: B018 - raises ValueError for a non-numeric or out-of-range port
+    except ValueError:
+        raise ValueError("provider URL is not a valid address") from None
+    if parts.scheme.lower() not in {"http", "https"}:
+        raise ValueError("provider URL must use HTTP or HTTPS")
+    if not parts.hostname:
+        raise ValueError("provider URL must include a host, for example https://api.example.com/v1")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("provider URL must not contain a username or password; use the API key field")
+    if parts.query or parts.fragment:
+        raise ValueError("provider URL must not contain a query string or fragment")
+    return text
+
+
 def _origin(url: str) -> tuple[str, str, int | None]:
     parts = urlsplit(url)
     try:
@@ -3655,10 +3697,17 @@ def _resolve_model(provider: dict[str, Any], requested: str | None) -> str:
         raise ValueError("provider has no model configured")
     chosen = (requested or "").strip()
     if not chosen:
-        return models[0]
+        # A discovered list from api.openai.com includes embedding, speech and image models; the first entry of an
+        # alphabetical list was often one of those. Prefer a model that can chat.
+        return next((model for model in models if not _NON_CHAT_MODEL.search(model)), models[0])
     if chosen not in models:
         raise ValueError("model is not configured on this provider")
     return chosen
+
+
+_NON_CHAT_MODEL = re.compile(
+    r"(^|[-_/.:])(embed(ding)?s?|whisper|tts|dall-e|moderation|transcribe|realtime|image|audio|davinci|babbage)([-_/.:\d]|$)", re.I
+)
 
 
 def _decode_images(attachments: list[dict[str, Any]] | None) -> list[tuple[str, str, bytes]]:

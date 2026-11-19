@@ -322,7 +322,7 @@ def platform_spawn_env() -> dict[str, str]:
     env = dict(os.environ)
     if sys.platform == "darwin":
         env.setdefault("TERM", "xterm-256color")
-    env.pop("TERMX_PASSCODE", None)
-    env.pop("TERMX_TOKEN", None)
+    from .env import strip_host_secrets
+    strip_host_secrets(env)
     env["TERMX_ENGINE_CHILD"] = str(int(time.time()))
     return env

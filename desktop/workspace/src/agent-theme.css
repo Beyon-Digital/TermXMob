@@ -162,4 +162,9 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspa
 html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(.dialog-content, .studio-panel) :is(h1, h2, h3, h4)[tabindex="-1"]:focus-visible {
   outline: none;
 }
+/* A wrapper that draws the ring with :focus-within owns it. The control inside draws none, so a field never shows two
+   rings (the New bot description box showed an outer ring plus an inset one). */
+html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(.describe-composer, .control-search):focus-within :is(input, textarea, select):focus-visible {
+  outline-color: transparent; /* stays visible in forced-colors mode */
+}
 }

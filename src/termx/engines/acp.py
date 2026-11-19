@@ -409,6 +409,8 @@ class AcpEngine:
 
     def _launch_env(self) -> dict[str, str]:
         env = dict(self._spawn_env) if self._spawn_env is not None else _child_env()
+        from .env import strip_host_secrets
+        strip_host_secrets(env)  # a name the runner lists in env_names is re-added below, deliberately
         if "env_names" in self._launch_config:
             runtime_names = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL",
                              "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "SystemRoot", "COMSPEC",
@@ -1151,9 +1153,7 @@ def _client_capabilities() -> Any:
 
 
 def _child_env() -> dict[str, str]:
-    from .env import engine_search_path
+    from .env import engine_search_path, strip_host_secrets
     env = dict(os.environ)
     env["PATH"] = os.pathsep.join(engine_search_path(env))
-    env.pop("TERMX_PASSCODE", None)
-    env.pop("TERMX_TOKEN", None)
-    return env
+    return strip_host_secrets(env)

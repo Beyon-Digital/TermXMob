@@ -32,6 +32,12 @@ export interface AgentProvider {
   id: string; kind: string; name: string;
   base_url?: string | null; model?: string | null; models?: string[] | null; capabilities?: string[] | null;
   secret_configured?: boolean | null; created_at?: number | null; updated_at?: number | null;
+  /** `secret_configured` is "connected": a saved key, or a server marked as needing none. */
+  key_saved?: boolean | null; key_optional?: boolean | null;
+  /** Where the key comes from. "environment" wins over a key saved in the app. */
+  key_source?: 'environment' | 'credential_store' | null;
+  /** Set on a save that changed something the person did not ask for, such as a key dropped with the server address. */
+  notice?: string | null;
   model_catalog?: Record<string, ModelInfo> | null; model_overrides?: ModelOverrides | null;
   limits?: ProviderLimits | null;
   catalog_refreshed_at?: number | null; catalog_error?: string | null; wire?: string | null;
@@ -44,10 +50,15 @@ export interface ProviderAccount {
   catalog_refreshed_at: number | null; catalog_error: string | null; wire?: string | null;
   /** Whether the host already holds a key for this account. The key itself is never sent to the browser. */
   secret_configured?: boolean;
+  key_saved?: boolean; key_optional?: boolean; key_source?: 'environment' | 'credential_store' | null;
 }
 /** What ProviderAccountForm submits; matches `AgentProviderInput`. `model` lists the included models, empty meaning all. */
 export interface ProviderAccountInput {
   id: string; name: string; kind: string; base_url: string; model: string; capabilities: string[]; api_key: string | null;
+  /** Delete the saved key. Ignored when `api_key` is set. */
+  clear_api_key?: boolean;
+  /** An OpenAI-compatible server that needs no key (a local Ollama, LM Studio or vLLM). */
+  key_optional?: boolean;
   model_meta?: ModelOverrides; wire?: 'responses' | 'chat' | 'messages'; limits?: ProviderLimits;
 }
 
@@ -57,6 +68,7 @@ export function providerAccount(provider: AgentProvider): ProviderAccount {
     model_catalog: provider.model_catalog ?? {}, model_overrides: provider.model_overrides ?? {}, limits: provider.limits ?? {max_output_tokens: null, request_timeout_s: null},
     catalog_refreshed_at: provider.catalog_refreshed_at ?? null, catalog_error: provider.catalog_error ?? null, wire: provider.wire ?? null,
     secret_configured: provider.secret_configured === true,
+    key_saved: provider.key_saved ?? undefined, key_optional: provider.key_optional ?? undefined, key_source: provider.key_source ?? null,
   };
 }
 

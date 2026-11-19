@@ -1,6 +1,6 @@
 @layer legacy {
 /* Short, shared state transitions. No animation communicates task completion. */
-html:is([data-app-workspace=agent],[data-app-workspace=studio]) :is(button,a,summary,input,select,textarea){transition-property:background-color,border-color,color,opacity,box-shadow;transition-duration:var(--motion-fast);transition-timing-function:var(--motion-ease)}
+html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(button,a,summary,input,select,textarea){transition-property:background-color,border-color,color,opacity,box-shadow;transition-duration:var(--motion-fast);transition-timing-function:var(--motion-ease)}
 @media(hover:hover) and (pointer:fine){
  html:is([data-app-workspace=agent],[data-app-workspace=studio]) .button:active:not(:disabled){opacity:.78}
 }
@@ -33,8 +33,13 @@ html:is([data-app-workspace=agent],[data-app-workspace=studio]) details[open]>:n
 @keyframes workspace-dialog-in{from{opacity:0;translate:0 6px;scale:.99}to{opacity:1;translate:0 0;scale:1}}
 @keyframes workspace-dialog-out{from{opacity:1;translate:0 0}to{opacity:0;translate:0 4px}}
 html:is([data-app-workspace=agent],[data-app-workspace=studio]) :is(.workspace-command-menu,.mode-popover,.studio-parameter-panel){animation:workspace-content-in var(--motion-fast) var(--motion-ease);transform-origin:top}
+/* Views and panels that mount when the user switches tab, sidebar view or settings category enter with a short fade
+   (opacity only on large panes; sidebar lists and toasts also rise 3px) instead of popping in. */
+html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(.tab-content,.data-sidebar-host,.settings-actions){animation:workspace-view-in var(--motion-standard) var(--motion-ease)}
+html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) :is(.explorer-view,.search-view,.view-empty,.data-navigation,.toast){animation:workspace-content-in var(--motion-standard) var(--motion-ease)}
+@keyframes workspace-view-in{from{opacity:0}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){
- html:is([data-app-workspace=agent],[data-app-workspace=studio]) *,html:is([data-app-workspace=agent],[data-app-workspace=studio]) *::before,html:is([data-app-workspace=agent],[data-app-workspace=studio]) *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+ html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) *,html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) *::before,html:is([data-app-workspace=agent],[data-app-workspace=studio],[data-app-workspace=data]) *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
  .ui-disclosure-content,.dialog-content,.dialog-overlay{animation:none!important;transition:none!important}
 }
 }

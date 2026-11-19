@@ -26,6 +26,7 @@ export const PROVIDER_CHOICES = [
   {id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1'},
   {id: ANTHROPIC_KIND, label: 'Anthropic (Claude)', url: ANTHROPIC_URL},
   {id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai/api/v1'},
+  {id: 'local', label: 'Local server (Ollama, LM Studio, vLLM)', url: 'http://127.0.0.1:11434/v1'},
   {id: 'kie', label: 'Kie.ai media adapter', url: 'https://api.kie.ai'},
   {id: 'custom', label: 'Another compatible provider', url: ''},
 ];

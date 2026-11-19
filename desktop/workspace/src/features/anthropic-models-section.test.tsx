@@ -106,3 +106,231 @@ it('offers Anthropic models in the model routing picker with their cost shown as
   fireEvent.change(model, {target: {value: 'claude-opus-5-5'}});
   expect(await screen.findByText(/Cost unpriced/)).toBeInTheDocument();
 });
+
+it('does not offer Remove account for a ChatGPT account, which the host cannot remove here', async () => {
+  host({providers: [gptAccount, {...claude, id: 'chat', kind: 'chatgpt', name: 'ChatGPT plan'}]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  await screen.findAllByText(/ChatGPT plan/);
+  expect(screen.getAllByRole('button', {name: 'Remove account'})).toHaveLength(1);
+});
+
+it('shows why a provider or engine is unavailable instead of only a status word', async () => {
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/auth/me') return {principal: {id: 'p', scopes: ['host-admin']}} as never;
+    JSON.parse(String(init?.body || '{}'));
+    return {data: {
+      engines: [{id: 'codex', label: 'Codex', installed: true, auth_state: 'unauthenticated', auth_detail: 'Run codex login on this host', error: null}, {id: 'zed', label: 'Zed', installed: false, error: 'zed executable not found'}],
+      agent_providers: [{...gptAccount, catalog_error: 'The provider rejected the API key'}], acp_registry: [], model_routing: {},
+    }} as never;
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  expect(await screen.findByText('Run codex login on this host')).toBeInTheDocument();
+  expect(screen.getByText('zed executable not found')).toBeInTheDocument();
+  expect(screen.getByText(/Model list failed: The provider rejected the API key/)).toBeInTheDocument();
+});
+
+it('refreshing an engine re-probes it before reading its models', async () => {
+  const calls = host();
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/auth/me') return {principal: {id: 'p', scopes: ['host-admin']}} as never;
+    const body = JSON.parse(String(init?.body || '{}'));
+    calls.push({query: body.query, variables: body.variables});
+    if (body.query?.includes('engine_models')) return {data: {engine_models: ['m1']}} as never;
+    return {data: {engines: [{id: 'codex', label: 'Codex', installed: true, auth_state: 'authenticated'}], agent_providers: [], acp_registry: [], model_routing: {}}} as never;
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Refresh models'}));
+  await waitFor(() => expect(calls.some(call => call.query?.includes('engine_models'))).toBe(true));
+  const queries = calls.map(call => call.query).filter(query => /refresh_engine_catalogue|engine_models/.test(query || ''));
+  expect(queries[0]).toContain('refresh_engine_catalogue');
+  expect(queries[1]).toContain('engine_models');
+});
+
+it('reports a failed model refresh instead of saying it was refreshed', async () => {
+  const calls = host({providers: [gptAccount]});
+  const base = mocked.getMockImplementation()!;
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}'));
+    if (body.query?.includes('refresh_provider_models')) {
+      calls.push({query: body.query, variables: body.variables});
+      return {data: {refresh_provider_models: {id: 'oa', model: 'gpt', catalog_error: 'The provider rejected the API key'}}} as never;
+    }
+    return base(path, init);
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Edit account'}));
+  const form = await screen.findByRole('form', {name: 'Edit provider account'});
+  fireEvent.click(within(form).getByRole('button', {name: 'Refresh models'}));
+  expect(await screen.findByText(/Could not refresh the model list: The provider rejected the API key/)).toBeInTheDocument();
+  expect(screen.queryByText('Model catalog refreshed')).not.toBeInTheDocument();
+});
+
+const localServer = {...gptAccount, id: 'ollama', kind: 'openai-compatible', name: 'Ollama', base_url: 'http://127.0.0.1:11434/v1', model: '', models: [], secret_configured: true, key_saved: false, key_optional: true};
+
+it('lists a server that needs no key as connected, and saves the choice', async () => {
+  const calls = host({providers: [localServer]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  expect(await screen.findByText(/OpenAI-compatible · No key needed/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Edit account'}));
+  const form = await screen.findByRole('form', {name: 'Edit provider account'});
+  const box = within(form).getByRole('checkbox', {name: 'This server needs no API key'});
+  expect(box).toBeChecked();
+  expect(within(form).queryByRole('button', {name: 'Remove saved key'})).not.toBeInTheDocument();
+  fireEvent.click(within(form).getByRole('button', {name: 'Save account changes'}));
+  await waitFor(() => expect(calls.some(call => call.query?.includes('save_agent_provider'))).toBe(true));
+  const input = calls.find(call => call.query?.includes('save_agent_provider'))!.variables.input as Record<string, unknown>;
+  expect(input.key_optional).toBe(true);
+  expect(input.api_key).toBeNull();
+  expect(input).not.toHaveProperty('clear_api_key');
+});
+
+it('removes a saved key only after the person asks, and says an environment key wins', async () => {
+  const calls = host({providers: [{...localServer, key_saved: true, key_optional: false, key_source: 'environment'}]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Edit account'}));
+  const form = await screen.findByRole('form', {name: 'Edit provider account'});
+  expect(within(form).getByText(/TERMX_AI_OLLAMA_API_KEY/)).toBeInTheDocument();
+  fireEvent.click(within(form).getByRole('button', {name: 'Remove saved key'}));
+  expect(within(form).getByText('The saved key will be removed when you save.')).toBeInTheDocument();
+  fireEvent.click(within(form).getByRole('button', {name: 'Keep the key'}));
+  expect(within(form).getByRole('button', {name: 'Remove saved key'})).toBeInTheDocument();
+  fireEvent.click(within(form).getByRole('button', {name: 'Remove saved key'}));
+  fireEvent.click(within(form).getByRole('button', {name: 'Save account changes'}));
+  await waitFor(() => expect(calls.some(call => call.query?.includes('save_agent_provider'))).toBe(true));
+  expect((calls.find(call => call.query?.includes('save_agent_provider'))!.variables.input as Record<string, unknown>).clear_api_key).toBe(true);
+});
+
+it('shows the host notice when a save dropped the key with the server address', async () => {
+  host({providers: [localServer]});
+  const base = mocked.getMockImplementation()!;
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}'));
+    if (body.query?.includes('save_agent_provider')) return {data: {save_agent_provider: {id: 'ollama', notice: 'The saved API key was removed because the server address changed. Enter the key for the new server.'}}} as never;
+    return base(path, init);
+  });
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Edit account'}));
+  const form = await screen.findByRole('form', {name: 'Edit provider account'});
+  fireEvent.click(within(form).getByRole('button', {name: 'Save account changes'}));
+  expect(await screen.findByText(/key was removed because the server address changed/)).toBeInTheDocument();
+});
+
+const chatgptAccount = {...claude, id: 'chatgpt-1', kind: 'chatgpt', name: 'ChatGPT plan', base_url: '', model: 'gpt-5', models: ['gpt-5'], wire: 'responses', model_catalog: {}};
+
+function chatgptHost(options: {providers?: unknown[]; statuses?: {status: string; message?: string}[]; signOut?: unknown} = {}) {
+  const {providers = [], statuses = [{status: 'pending'}, {status: 'completed', message: 'Signed in. Eligible AI requests use your ChatGPT plan.'}], signOut = {signed_out: true, revocation_confirmed: true, message: 'Signed out.'}} = options;
+  const calls = host({providers});
+  const base = mocked.getMockImplementation()!;
+  let polled = 0;
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}'));
+    const query: string = body.query || '';
+    if (query.includes('start_chatgpt_sign_in')) {
+      calls.push({query, variables: body.variables});
+      return {data: {start_chatgpt_sign_in: {attempt_id: 'att-1', authorization_url: 'https://auth.openai.com/oauth/authorize?x=1', browser_opened: true, status: 'pending'}}} as never;
+    }
+    if (query.includes('chatgpt_sign_in_status')) return {data: {chatgpt_sign_in_status: statuses[Math.min(polled++, statuses.length - 1)]}} as never;
+    if (query.includes('cancel_chatgpt_sign_in')) { calls.push({query, variables: body.variables}); return {data: {cancel_chatgpt_sign_in: {status: 'cancelled'}}} as never; }
+    if (query.includes('sign_out_chatgpt')) { calls.push({query, variables: body.variables}); return {data: {sign_out_chatgpt: signOut}} as never; }
+    return base(path, init);
+  });
+  return calls;
+}
+
+it('signs in with ChatGPT from settings, shows the wait with a link, and finishes on its own', async () => {
+  const calls = chatgptHost();
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Sign in with ChatGPT'}));
+  expect(await screen.findByText('Waiting for ChatGPT sign-in.')).toBeInTheDocument();
+  expect(screen.getByRole('link', {name: 'Open sign-in page'})).toHaveAttribute('href', 'https://auth.openai.com/oauth/authorize?x=1');
+  expect(calls.find(call => call.query?.includes('start_chatgpt_sign_in'))!.variables.id).toBeNull();
+  expect(await screen.findByText(/Signed in\. Eligible AI requests use your ChatGPT plan/, {}, {timeout: 6000})).toBeInTheDocument();
+  expect(screen.queryByText('Waiting for ChatGPT sign-in.')).not.toBeInTheDocument();
+}, 15000);
+
+it('reports a failed or expired sign-in instead of waiting forever', async () => {
+  chatgptHost({statuses: [{status: 'expired', message: 'ChatGPT sign-in expired. Try again.'}]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Sign in with ChatGPT'}));
+  expect(await screen.findByText('ChatGPT sign-in expired. Try again.', {}, {timeout: 6000})).toBeInTheDocument();
+  expect(screen.queryByText('Waiting for ChatGPT sign-in.')).not.toBeInTheDocument();
+}, 15000);
+
+it('cancels a pending sign-in on the host', async () => {
+  const calls = chatgptHost({statuses: [{status: 'pending'}]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByRole('button', {name: 'Sign in with ChatGPT'}));
+  fireEvent.click(await screen.findByRole('button', {name: 'Cancel sign-in'}));
+  await waitFor(() => expect(calls.some(call => call.query?.includes('cancel_chatgpt_sign_in'))).toBe(true));
+  expect(calls.find(call => call.query?.includes('cancel_chatgpt_sign_in'))!.variables.id).toBe('att-1');
+  expect(screen.queryByText('Waiting for ChatGPT sign-in.')).not.toBeInTheDocument();
+});
+
+it('shows a ChatGPT account as signed in with Sign out, and says when revocation was not confirmed', async () => {
+  const calls = chatgptHost({providers: [chatgptAccount], signOut: {signed_out: true, revocation_confirmed: false, message: 'Signed out locally. Remote revocation was not confirmed; disconnect TermX in ChatGPT settings.'}});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  expect(await screen.findByText(/ChatGPT · Signed in/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Remove account'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Sign out'}));
+  expect(await screen.findByText(/Remote revocation was not confirmed/)).toBeInTheDocument();
+  expect(calls.find(call => call.query?.includes('sign_out_chatgpt'))!.variables.id).toBe('chatgpt-1');
+});
+
+it('offers Sign in again for a signed-out ChatGPT account and reuses that account', async () => {
+  const calls = chatgptHost({providers: [{...chatgptAccount, secret_configured: false}]});
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  expect(await screen.findByText(/ChatGPT · Signed out/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Test connection'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name: 'Sign in again'}));
+  await screen.findByText('Waiting for ChatGPT sign-in.');
+  expect(calls.find(call => call.query?.includes('start_chatgpt_sign_in'))!.variables.id).toBe('chatgpt-1');
+});
+
+it('hides the ChatGPT sign-in controls from someone who cannot administer the host', async () => {
+  chatgptHost({providers: [chatgptAccount], statuses: [{status: 'pending'}]});
+  mocked.mockImplementationOnce(async () => ({principal: {id: 'p', scopes: []}}) as never);
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  await screen.findByText(/ChatGPT · Signed in/);
+  expect(screen.queryByRole('button', {name: 'Sign in with ChatGPT'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', {name: 'Sign out'})).not.toBeInTheDocument();
+});
+
+function installHost(reply: unknown) {
+  const calls = host();
+  const base = mocked.getMockImplementation()!;
+  mocked.mockImplementation(async (path: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}'));
+    if (body.query?.includes('install_acp_runner')) { calls.push({query: body.query, variables: body.variables}); return {data: {install_acp_runner: reply}} as never; }
+    return base(path, init);
+  });
+  return calls;
+}
+
+async function install(allow = false) {
+  render(<Managers section="models" projectId={null} sessionId={null} />);
+  fireEvent.click(await screen.findByText('Install a compatible engine'));
+  fireEvent.change(await screen.findByLabelText('Registry package ID'), {target: {value: 'acme-agent'}});
+  if (allow) fireEvent.click(screen.getByRole('checkbox', {name: 'Allow a download that has no published checksum'}));
+  fireEvent.click(screen.getByRole('button', {name: 'Install engine'}));
+}
+
+it('installs a registry engine without allowing unverified downloads unless asked', async () => {
+  const calls = installHost({registry_id: 'acme-agent', engine_id: 'acme', installed: true, registered: true});
+  await install();
+  expect(await screen.findByText('Engine installed')).toBeInTheDocument();
+  expect(calls.find(call => call.query?.includes('install_acp_runner'))!.variables).toEqual({id: 'acme-agent', allow: false});
+});
+
+it('sends the explicit allow choice for a download with no checksum', async () => {
+  const calls = installHost({registry_id: 'acme-agent', engine_id: 'acme', installed: true, registered: true});
+  await install(true);
+  await screen.findByText('Engine installed');
+  expect(calls.find(call => call.query?.includes('install_acp_runner'))!.variables.allow).toBe(true);
+});
+
+it('does not report a broken install as installed', async () => {
+  installHost({registry_id: 'acme-agent', engine_id: 'acme', installed: false, registered: true, error: 'node: command not found'});
+  await install();
+  expect(await screen.findByText(/The engine was added, but TermX could not start it: node: command not found/)).toBeInTheDocument();
+  expect(screen.queryByText('Engine installed')).not.toBeInTheDocument();
+});

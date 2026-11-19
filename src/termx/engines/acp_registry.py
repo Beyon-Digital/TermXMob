@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -21,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .acp import AcpEngine
-from .env import resolve_executable
+from .env import resolve_executable, strip_host_secrets
 
 REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"
 MAX_REGISTRY_BYTES = 5 * 1024 * 1024
@@ -38,6 +39,40 @@ def _platform_key() -> str:
     if not os_name or not arch:
         raise ValueError(f"ACP registry binaries are unavailable for {platform.system()} {platform.machine()}")
     return f"{os_name}-{arch}"
+
+
+# What a registry entry may ask the host to install. Anything else (a git or file URL, a tarball address, a value that
+# starts with "-" and would be read as an option) is refused before a package manager sees it.
+_NPM_SPEC = re.compile(r"^(@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-z0-9][A-Za-z0-9._~+^<>=|*-]*)?$")
+_UV_SPEC = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9._,-]+\])?"
+    r"((@[A-Za-z0-9][A-Za-z0-9._+!-]*)|([<>=!~]=?[A-Za-z0-9.*+!_-]+(,[<>=!~]=?[A-Za-z0-9.*+!_-]+)*))?$"
+)
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+NO_CHECKSUM = (
+    "The registry publishes no SHA-256 checksum for this download, so TermX cannot verify it. "
+    "Install it only if you trust the publisher and have chosen to allow unverified downloads."
+)
+
+
+def _install_env() -> dict[str, str]:
+    """Environment for a package manager: the host's own, minus its credentials and anything the registry set.
+
+    Package install steps run publisher code as the host user. They must not see ``TERMX_AI_*_API_KEY`` or the host
+    passcode, and registry-provided variables belong to the agent at run time, not to the installer.
+    """
+    return strip_host_secrets(dict(os.environ))
+
+
+def _run_install(argv: list[str], what: str, *, env: dict[str, str]) -> None:
+    """Run a package manager; a failure carries its own last lines, never the command line."""
+    try:
+        done = subprocess.run(argv, check=False, timeout=900, capture_output=True, text=True, env=env)
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"{what} took too long and was stopped. Try again, or install it by hand.") from None
+    if done.returncode != 0:
+        tail = " ".join((done.stderr or done.stdout or "").strip().splitlines()[-3:])[:300]
+        raise ValueError(f"{what} failed (exit {done.returncode}). {tail}".strip())
 
 
 def _package_name(spec: str) -> str:
@@ -315,7 +350,7 @@ class AcpRegistry:
                 approval_sink=self.gateway.approval_sink))
             self.gateway._registry_runner_ids.add(engine_id)
 
-    async def install(self, registry_id: str) -> tuple[str, str, list[str], dict[str, Any]]:
+    async def install(self, registry_id: str, *, allow_unverified: bool = False) -> tuple[str, str, list[str], dict[str, Any]]:
         if not self.entries:
             await self.refresh()
         entry = self.entries.get(registry_id)
@@ -327,25 +362,28 @@ class AcpRegistry:
         if existing:
             command, args = existing
         else:
-            command, args = await asyncio.to_thread(self._install_sync, registry_id, entry)
+            command, args = await asyncio.to_thread(self._install_sync, registry_id, entry, allow_unverified)
         return self._registered_id(registry_id), command, args, entry
 
-    def _install_sync(self, registry_id: str, entry: dict[str, Any]) -> tuple[str, list[str]]:
+    def _install_sync(self, registry_id: str, entry: dict[str, Any], allow_unverified: bool = False) -> tuple[str, list[str]]:
         kind, spec = self._distribution(entry)
+        verified: bool | None = None  # only a binary download has a checksum to check
         target = self.root / registry_id / str(entry.get("version", "latest"))
         target.mkdir(parents=True, exist_ok=True)
         args = [str(arg) for arg in spec.get("args", [])]
-        env = dict(os.environ)
-        env.update({str(k): str(v) for k, v in (spec.get("env") or {}).items()})
+        install_env = _install_env()
         if kind == "npx":
             package = str(spec.get("package", ""))
             if not package:
                 raise ValueError("ACP registry npm distribution has no package")
+            if not _NPM_SPEC.match(package):
+                raise ValueError("ACP registry npm package name is not an ordinary registry package")
             npm = resolve_executable("npm")
             if not npm:
                 raise ValueError("Install Node.js/npm on the TermX host to install this ACP agent")
-            subprocess.run([npm, "install", "--prefix", str(target), package], check=True, timeout=900,
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # --ignore-scripts: a package's own install scripts would run as the host user before anything is reviewed.
+            _run_install([npm, "install", "--prefix", str(target), "--ignore-scripts", "--no-audit", "--no-fund", "--", package],
+                         "Installing the npm package", env=install_env)
             root_package = target / "node_modules" / Path(_package_name(package))
             script = _npm_bin_path(root_package, package)
             if os.name == "nt":
@@ -367,14 +405,16 @@ class AcpRegistry:
             package = str(spec.get("package", ""))
             if not package:
                 raise ValueError("ACP registry uvx distribution has no package")
+            if not _UV_SPEC.match(package):
+                raise ValueError("ACP registry Python package name is not an ordinary registry package")
             uv = resolve_executable("uv")
             if not uv:
                 raise ValueError("Install uv on the TermX host to install this ACP agent")
             bin_dir = target / "bin"
             tools_dir = target / "tools"
-            install_env = {**env, "UV_TOOL_BIN_DIR": str(bin_dir), "UV_TOOL_DIR": str(tools_dir)}
-            subprocess.run([uv, "tool", "install", package], check=True, timeout=900,
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=install_env)
+            uv_env = {**install_env, "UV_TOOL_BIN_DIR": str(bin_dir), "UV_TOOL_DIR": str(tools_dir)}
+            # --no-build: install a published wheel only; building a source distribution runs publisher code.
+            _run_install([uv, "tool", "install", "--no-build", "--", package], "Installing the Python package", env=uv_env)
             candidate = bin_dir / _candidate_bin(package)
             if os.name == "nt":
                 candidate = candidate.with_suffix(".exe")
@@ -385,14 +425,14 @@ class AcpRegistry:
                 candidate = candidates[0]
             command = candidate
         else:
-            command = self._install_binary(target, spec)
+            command, verified = self._install_binary(target, spec, allow_unverified)
         command = Path(command).resolve()
         if not command.is_file():
             raise ValueError("ACP registry installer did not produce the expected command")
         if os.name != "nt":
             command.chmod(command.stat().st_mode | stat.S_IXUSR)
         install_record = {"registry_id": registry_id, "version": entry.get("version"),
-                          "command": str(command), "args": args}
+                          "command": str(command), "args": args, "checksum_verified": verified}
         marker = self.root / registry_id / "install.json"
         marker.parent.mkdir(parents=True, exist_ok=True)
         temporary = marker.with_suffix(".tmp")
@@ -400,20 +440,22 @@ class AcpRegistry:
         os.replace(temporary, marker)
         return str(command), args
 
-    def _install_binary(self, target: Path, spec: dict[str, Any]) -> Path:
+    def _install_binary(self, target: Path, spec: dict[str, Any], allow_unverified: bool = False) -> tuple[Path, bool]:
         url = str(spec.get("archive", ""))
         if not url.startswith("https://"):
             raise ValueError("ACP registry binary must use HTTPS")
+        expected = str(spec.get("sha256", "")).strip().lower()
+        if expected and not _SHA256.match(expected):
+            raise ValueError("The registry's SHA-256 checksum for this download is malformed")
+        if not expected and not allow_unverified:
+            raise ValueError(NO_CHECKSUM)  # refuse before downloading anything
         request = urllib.request.Request(url, headers={"User-Agent": "TermX-ACP-Registry"})
         with urllib.request.urlopen(request, timeout=120) as response:
             payload = response.read(MAX_ARCHIVE_BYTES + 1)
         if len(payload) > MAX_ARCHIVE_BYTES:
             raise ValueError("ACP agent archive exceeds the size limit")
-        expected = str(spec.get("sha256", "")).lower()
-        if expected:
-            actual = hashlib.sha256(payload).hexdigest()
-            if actual != expected:
-                raise ValueError("ACP agent archive SHA-256 verification failed")
+        if expected and hashlib.sha256(payload).hexdigest() != expected:
+            raise ValueError("ACP agent archive SHA-256 verification failed")
         archive = target / "agent.archive"
         archive.write_bytes(payload)
         extract_to = target / "payload"
@@ -461,7 +503,7 @@ class AcpRegistry:
         command = (extract_to / Path(*[part for part in relative if part not in {".", ""}])).resolve()
         if not command.is_relative_to(extract_to.resolve()) or not command.is_file():
             raise ValueError("ACP agent archive did not contain its declared command")
-        return command
+        return command, bool(expected)
 
     async def stop(self) -> None:
         if self._refresh_task and not self._refresh_task.done():

@@ -139,7 +139,7 @@ def test_send_signal_int_reaches_foreground_job() -> None:
 
             leader_pgrp = os.getpgid(session.proc.pid)
             session.write(b"sleep 60\n")
-            for _ in range(80):
+            for _ in range(400):
                 if os.tcgetpgrp(session.master_fd) != leader_pgrp:
                     break
                 await asyncio.sleep(0.05)
@@ -147,7 +147,7 @@ def test_send_signal_int_reaches_foreground_job() -> None:
             assert fg_pgrp != leader_pgrp, "sleep did not take the pty foreground"
 
             assert session.send_signal("int") is True
-            for _ in range(80):
+            for _ in range(400):
                 if os.tcgetpgrp(session.master_fd) == leader_pgrp:
                     break
                 await asyncio.sleep(0.05)

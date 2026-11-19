@@ -222,6 +222,9 @@ async def discover_models(
         # The SDK owns this transport (its own pool, auth headers and typed errors).
         from termx.agent.providers import make_anthropic_client
 
+        if not api_key:
+            # Without this the SDK raises a bare TypeError and the stored error is just "TypeError".
+            raise ProviderError("No API key is saved for this account", status_code=401)
         sdk = make_anthropic_client(str(provider["base_url"]), api_key, timeout_s)
         try:
             return await discover_anthropic(sdk, timeout_s=timeout_s, now=now)
