@@ -226,7 +226,7 @@ def test_registry_install_registers_with_one_admin_mutation(tmp_path, monkeypatc
         "id": "fixture-acp", "name": "Fixture ACP", "version": "1.0.0",
         "distribution": {"npx": {"package": "fixture-acp@1.0.0"}},
     }]}
-    registry._install_sync = lambda _id, _entry: (sys.executable, ["-u", str(FIXTURE)])
+    registry._install_sync = lambda _id, _entry, _allow=False: (sys.executable, ["-u", str(FIXTURE)])
     headers = {"X-Termx-Passcode": "test-only"}
     mutation = 'mutation($id: String!) { install_acp_runner(registry_id: $id) }'
     with TestClient(create_app(state)) as client:

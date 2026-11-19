@@ -365,7 +365,13 @@ class AgentManager:
     # Provider configuration -----------------------------------------
 
     def list_providers(self) -> list[dict[str, Any]]:
-        return self.store.list_providers()
+        return [self._with_key_source(provider) for provider in self.store.list_providers()]
+
+    def _with_key_source(self, provider: dict[str, Any]) -> dict[str, Any]:
+        """Say where the key comes from, so the screen can explain an environment variable overriding a saved key."""
+        if provider.get("kind") == "chatgpt":
+            return provider
+        return {**provider, "key_source": self.credentials.source(provider["id"])}
 
     def save_provider(
         self,
@@ -377,6 +383,8 @@ class AgentManager:
         model: str,
         capabilities: list[str] | None,
         api_key: str | None = None,
+        clear_api_key: bool = False,
+        key_optional: bool | None = None,
         model_meta: dict[str, Any] | None = None,
         wire: str | None = None,
         limits: dict[str, Any] | None = None,
@@ -417,14 +425,22 @@ class AgentManager:
         api_key = api_key.strip() if api_key else api_key
         if api_key and (not api_key.isprintable() or any(ch.isspace() for ch in api_key)):
             raise ValueError("API key must not contain spaces or control characters")
+        notice: str | None = None
+        if key_optional and kind != "openai-compatible":
+            raise ValueError("Only an OpenAI-compatible server can run without an API key")
         configured = bool(self.credentials.get(provider_id))
         if api_key:
             self.credentials.set(provider_id, api_key)
             configured = True
+        elif clear_api_key:
+            self.credentials.delete(provider_id)
+            # An environment variable survives deleting the saved key; the account stays configured through it.
+            configured = bool(self.credentials.get(provider_id))
         elif configured and current and _origin(current["base_url"]) != _origin(base_url):
             # The key was issued for the old server; do not send it to a new one.
             self.credentials.delete(provider_id)
             configured = False
+            notice = "The saved API key was removed because the server address changed. Enter the key for the new server."
         # Config or key changed: drop the pooled client so the next adapter
         # does not reuse a stale base URL or credential.
         self._http.evict(provider_id)
@@ -438,6 +454,7 @@ class AgentManager:
             model=model,
             capabilities=allowed,
             secret_configured=configured,
+            key_optional=key_optional,
             model_overrides=overrides,
             wire=wire,
             limits=provider_limits,
@@ -446,7 +463,8 @@ class AgentManager:
             # The old catalog describes a different server.
             self.store.clear_provider_catalog(provider_id)
             provider = self.store.get_provider(provider_id) or provider
-        return provider
+        view = self._with_key_source(provider)
+        return {**view, "notice": notice} if notice else view
 
     async def test_provider(self, provider_id: str, *, billed: bool = False) -> dict[str, str]:
         """Check the connection with the free model-list request; ``billed`` runs one real model call instead."""

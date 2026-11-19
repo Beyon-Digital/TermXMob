@@ -106,3 +106,58 @@ def test_provider_http_errors_name_the_likely_cause() -> None:
     assert "supports them" in explain(400, "")  # no message from the provider: keep the tools hint
     assert explain(500, "") == "Provider request failed (500): The provider returned an error."
     assert "rate limited" in explain(429, "{}")
+
+
+def _keyless_manager(tmp_path: Path):
+    manager, _store = build_manager(tmp_path, FakeAdapter())  # its credentials are an in-memory store
+    return manager
+
+
+def _save_local(manager, **extra):
+    return manager.save_provider(
+        provider_id="local", kind="openai-compatible", name="Ollama", base_url="http://127.0.0.1:11434/v1",
+        model="llama3", capabilities=["shell"], **extra,
+    )
+
+
+def test_a_server_that_needs_no_key_counts_as_connected_without_one(tmp_path: Path) -> None:
+    manager = _keyless_manager(tmp_path)
+    assert _save_local(manager)["secret_configured"] is False  # no key and not marked keyless: not usable yet
+    row = _save_local(manager, key_optional=True)
+    assert row["secret_configured"] is True and row["key_saved"] is False and row["key_optional"] is True
+    assert manager.list_providers()[-1]["secret_configured"] is True
+    assert _save_local(manager)["key_optional"] is True  # a later save that does not mention it keeps the choice
+    assert _save_local(manager, key_optional=False)["secret_configured"] is False
+
+
+def test_only_an_openai_compatible_server_can_skip_the_key(tmp_path: Path) -> None:
+    manager = _keyless_manager(tmp_path)
+    for kind, url in (("openai", "https://api.openai.com/v1"), ("anthropic", "https://api.anthropic.com")):
+        with pytest.raises(ValueError, match="without an API key"):
+            manager.save_provider(provider_id="x", kind=kind, name="X", base_url=url, model="m",
+                                  capabilities=["shell"], key_optional=True)
+
+
+def test_a_saved_key_can_be_cleared_and_an_environment_key_is_reported(tmp_path: Path, monkeypatch) -> None:
+    manager = _keyless_manager(tmp_path)
+    saved = _save_local(manager, api_key="sk-local-1")
+    assert saved["secret_configured"] is True and saved["key_source"] == "credential_store"
+    cleared = _save_local(manager, clear_api_key=True)
+    assert cleared["secret_configured"] is False and cleared["key_source"] is None
+    assert manager.credentials.get("local") is None
+    _save_local(manager, api_key="sk-local-2")
+    monkeypatch.setenv("TERMX_AI_LOCAL_API_KEY", "from-env")
+    still = _save_local(manager, clear_api_key=True)
+    assert still["secret_configured"] is True and still["key_source"] == "environment"  # the variable wins; the screen says so
+    assert manager.credentials._memory.get("local") is None  # the saved copy is gone
+
+
+def test_changing_the_server_address_says_the_saved_key_was_removed(tmp_path: Path) -> None:
+    manager = _keyless_manager(tmp_path)
+    _save_local(manager, api_key="sk-local-1")
+    moved = manager.save_provider(provider_id="local", kind="openai-compatible", name="Ollama",
+                                  base_url="http://10.0.0.5:11434/v1", model="llama3", capabilities=["shell"])
+    assert moved["secret_configured"] is False and "key was removed" in moved["notice"]
+    again = manager.save_provider(provider_id="local", kind="openai-compatible", name="Ollama",
+                                  base_url="http://10.0.0.5:11434/v1", model="llama3", capabilities=["shell"])
+    assert "notice" not in again

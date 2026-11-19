@@ -50,6 +50,10 @@ type AgentProvider {
   wire: String
   capabilities: [String!]
   secret_configured: Boolean
+  key_saved: Boolean
+  key_optional: Boolean
+  notice: String
+  key_source: String
   created_at: Float
   updated_at: Float
 }
@@ -62,6 +66,8 @@ input AgentProviderInput {
   model: String! = ""
   capabilities: [String!] = null
   api_key: String = null
+  clear_api_key: Boolean! = false
+  key_optional: Boolean = null
   model_meta: JSON = null
   wire: String = null
   limits: JSON = null
@@ -1110,7 +1116,7 @@ type Mutation {
   start_ready_nodes: OrchestratorBoard!
   cancel_node(node_id: String!): OrchestratorBoard!
   refresh_acp_registry: JSON!
-  install_acp_runner(registry_id: String!): JSON!
+  install_acp_runner(registry_id: String!, allow_unverified: Boolean! = false): JSON!
   update_agent_configuration(input: JSON!): JSON!
   refresh_engine_catalogue(engine_id: String = null, cwd: String = null): JSON!
   authenticate_engine(engine_id: String!, method_id: String!): JSON!

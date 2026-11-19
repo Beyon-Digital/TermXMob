@@ -354,6 +354,7 @@ class AgentStore:
             ("catalog_error", "ALTER TABLE providers ADD COLUMN catalog_error TEXT"),
             ("wire", "ALTER TABLE providers ADD COLUMN wire TEXT NOT NULL DEFAULT 'responses'"),
             ("limits", "ALTER TABLE providers ADD COLUMN limits TEXT NOT NULL DEFAULT '{}'"),
+            ("key_optional", "ALTER TABLE providers ADD COLUMN key_optional INTEGER NOT NULL DEFAULT 0"),
         ):
             if col not in provider_columns:
                 self._db.execute(ddl)
@@ -427,6 +428,7 @@ class AgentStore:
         model: str,
         capabilities: list[str],
         secret_configured: bool | None = None,
+        key_optional: bool | None = None,
         model_overrides: dict[str, Any] | None = None,
         wire: str | None = None,
         limits: dict[str, Any] | None = None,
@@ -470,6 +472,8 @@ class AgentStore:
                     now,
                 ),
             )
+            if key_optional is not None:
+                self._db.execute("UPDATE providers SET key_optional = ? WHERE id = ?", (int(key_optional), provider_id))
             if model_overrides is not None:
                 self._db.execute(
                     "UPDATE providers SET model_overrides = ? WHERE id = ?",
@@ -568,7 +572,10 @@ class AgentStore:
             "catalog_refreshed_at": row["catalog_refreshed_at"],
             "catalog_error": row["catalog_error"],
             "capabilities": _load_json(row["capabilities"], []),
-            "secret_configured": bool(row["secret_configured"]),
+            # "Connected": a saved key, or a server the person said needs none. `key_saved` is the honest key flag.
+            "secret_configured": bool(row["secret_configured"]) or bool(row["key_optional"]),
+            "key_saved": bool(row["secret_configured"]),
+            "key_optional": bool(row["key_optional"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
